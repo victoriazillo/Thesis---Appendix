@@ -1,0 +1,173 @@
+In this file is reported the code of local shrinkage and ridge regression Cross-Validation for Model 1
+
+Loading libraries and data-set:
+
+```{r}
+library(caret)
+library(Hmisc)
+library(ggplot2)
+library(MASS)
+library(dplyr)
+library(glmnet)
+getHdata(gusto)
+gusto.dat <- gusto
+
+set.seed(4176340)
+
+gusto.dat <- gusto[which(gusto$grpl %in% c(1,2,4) & gusto$grps %in% c(5,9,10,11)),]
+
+#re-name the variables used in model 1
+gusto.dat$HEI <- gusto.dat$height
+gusto.dat$AGE <- gusto.dat$age
+gusto.dat$WEI <- gusto.dat$weight
+gusto.dat$PUL <- gusto.dat$pulse
+gusto.dat$SYS <- gusto.dat$sysbp
+
+```
+
+Chosing the optimal threshold with Cross Validation which minimizes the MSE
+```{r}
+fold_k5 <- sample(rep(1:5, length.out= nrow(gusto.dat))) #index per fold
+
+Cross_val_local_shrik <- function(neff) { 
+  
+  form1 <- WEI ~ HEI + AGE + PUL + SYS  #model 1
+  
+  mse <- rep(0,5)# empty MSE vector
+  
+  for(i in 1:5){
+    train <- gusto.dat[fold_k5 != i, ] #fold partition
+    test  <- gusto.dat[fold_k5 == i, ]
+  
+  #Training set shrinkage:
+    
+  #initialization:
+    mod_OLS_base <- lm(formula = form1, data = train)
+    X_ols <- model.matrix(~HEI+AGE+PUL+SYS, data= train)  
+    XTX <- t(X_ols)%*%X_ols
+    
+    relvar_OLS <- numeric(length = nrow(X_ols)) 
+     for(j in 1:length(relvar_OLS)){
+      relvar_OLS[j] <- (t(X_ols[j,])%*%solve(XTX)%*%X_ols[j,])}
+    
+    Z_ols      <- X_ols[,-1] #predictors without intercept
+    n          <- nrow(Z_ols) 
+    Z_shrink   <- Z_ols    #copy of the covariates that will be shrunk
+    relvar_it  <- relvar_OLS #copy of hii
+    z_bar      <- colMeans(Z_shrink)  #average per predictor
+    zc         <- t(apply(X=Z_shrink, MARGIN = 1, FUN = function(x){x-z_bar})) #covariates are centered
+    X_shrink   <- cbind(icpt=rep(1,n), Z_shrink) #design matrix + intercept 
+    iter       <- 0 
+    maxiter    <- 1000
+    dist       <- n*relvar_it - 1  #distance
+    diststart  <- dist  # initial distance saved
+    max_dist <- n*1/neff-1  
+    Cov <- ginv(t(X_shrink)%*%X_shrink)
+    
+    
+    ##while loop until all distances are below the threshold:
+    while(max(dist) > max_dist & iter < maxiter){ 
+  
+   #compute the shrunk distance
+      distshrink  <- dist
+      distshrink[which(dist>max_dist)] <- max_dist #if dist > max_dist , dist is shrunk
+  
+  #compute shrinkage factor
+      a           <- sqrt(distshrink/dist)
+  
+  
+      azc         <- a*zc #  #shrink of the centered covariates
+      Z_shrink    <- t(apply(X=azc, MARGIN = 1, FUN = function(x){x + z_bar})) #adding the mean 
+  
+      iter <- iter + 1  
+
+      X_shrink   <- cbind(icpt=rep(1,n), Z_shrink)  #adding the intercept to the shrunk predictors
+   
+      z_bar      <- colMeans(Z_shrink) # calculating the mean of the shrunk covariates 
+  
+      zc         <- t(apply(X=Z_shrink, MARGIN = 1, FUN = function(x){x-z_bar})) #re-adding the mean computed after covariates shrinkage
+  
+  
+      Cov        <- ginv(t(X_shrink)%*%X_shrink) #re-compute the shrunk XTX
+  
+      relvar_it  <- diag(X_shrink %*% Cov %*% t(X_shrink))  #re-compute  the inverse of XTX with shrunk Cov 
+  
+      n_eff      <- 1/relvar_it #re-compute effective sample size (inverse of leverage hii)
+  
+      dist       <- n*relvar_it - 1  #re-compute the distances
+      }
+
+
+  train_shrunk <- data.frame("WEI" = train$weight) 
+  train_shrunk <- cbind(train_shrunk, Z_shrink)
+  mod_train_shrink <- lm(formula = form1, data = train_shrunk )
+  
+
+  
+  #test set shrinkage:
+  X_ols_test <- model.matrix(~HEI+AGE+PUL+SYS, data= test)
+  relvar_OLS_test <- numeric(length = nrow(X_ols_test))  
+  
+  for(k in 1:length(relvar_OLS_test)){                #inverse of effective sample size test set
+    relvar_OLS_test[k] <- (t(X_ols_test[k,])%*%Cov%*%X_ols_test[k,])}
+  
+  n.test <- nrow(X_ols_test)
+  test_distance <- n*relvar_OLS_test-1 
+  
+  
+  distshrink_test <- pmin(test_distance, max_dist)  #shrinkage of the test set
+  
+  a_test <-  sqrt(distshrink_test / test_distance)  
+
+
+  Z_ols_test   <- X_ols_test[,-1] # new patients (test set) without intercept
+  
+  Z_shrink_test <- Z_ols_test 
+  
+  relvar_it_test <- relvar_OLS_test
+
+  zc_test        <- t(apply(X=Z_shrink_test, MARGIN = 1, FUN = function(x){x-z_bar})) #center the covariates of the test set using the average of the shrunk training set covariates
+  
+  azc_test <-zc_test*a_test#  shrinking the new patients  (test set) covariates 
+  
+  Z_shrink_test    <- t(apply(X=azc_test, MARGIN = 1, FUN = function(x){x + z_bar})) #adding the mean 
+  
+  X_shrink_test <- cbind(icpt=rep(1,n.test), Z_shrink_test) #shrunk test set predictors
+
+  #MSE:
+  
+  test_shrunk <- data.frame("WEI" = test$weight) #observed test set response variable weight
+  test_shrunk <- cbind(test_shrunk, Z_shrink_test) 
+
+  pred <- predict(mod_train_shrink, newdata = test_shrunk) #compute predictions using the test se
+  
+  mse[i] <-  mean((test$weight- pred)^2)} #compute the MSE
+  
+  return(mean(mse)) 
+  }
+```
+
+CV search for the optimal threshold which minimizes the MSE:
+```{r}
+grid_neff <- c(0,30,40,50,70) #grid of candidates thresholds
+mse_values <- sapply(grid_neff, function(x) { Cross_val_local_shrik(neff = x) }) #applying the CV function over the grid
+results <- data.frame( neff = grid_neff, MSE = mse_values ) 
+best_grid <- results[which.min(results$MSE), ] 
+results  
+best_grid #Optimal threshold for model 1 is "neff"=50
+```
+
+
+Global shrinkage: ridge regression CV
+```{r}
+
+x <- model.matrix( ~ HEI + AGE + PUL + SYS, gusto.dat)[,-1] 
+y <- gusto.dat$WEI
+cv_ridge <- cv.glmnet( x, y, alpha = 0, lambda =  c(1, 0.5,0.1,0.05,0.02,0.01, 0),nfolds = 5, foldid = fold_k5  )  #cv using the same folds as local shrinkage
+
+cv_ridge$lambda.min
+cv_ridge$cvm[cv_ridge$lambda == cv_ridge$lambda.min] #optimal lambda is 0.1
+```
+
+
+
