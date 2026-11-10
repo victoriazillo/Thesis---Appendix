@@ -1,2 +1,29 @@
 # Thesis---Appendix
 This is the Appendix for the thesis which title is:  "Local shrinkage of uncertain predictions based on Effective sample size"
+## Purpose of this repository
+This repository contains the relevant code files used to understand how the analysis in this thesis were performed.
+## R code files and how to run the scripts
+
+1. The file 'neff exploration linear models.Rmd' contains the code used to explore the effective sample size distributions across different linear model specifications. 
+
+2. The folder Model 1 contains two R Markdown files:
+
+Model 1 - Cross Validation.Rmd: contains the implementation of the local shrinkage algorithm, adapted to perform cross-validation for Model 1.
+
+Model 1 - Predictions.Rmd: contains the code used to calculate the predictions for Model 1.
+
+3. The file 'Binary predictor shrinkage.Rmd' explores the shrinkage of binary predictors using the local shrinkage algorithm.
+
+4. The file 'Simulation study - Model 1.Rmd' contains the comparison of predictions between methods (local shrinkage - ridge regression - OLS) for model 1 in a simulated setting.
+
+I suggest to run the Rcode in the order above. The local shrinkage algorithm steps are commented in detail in the file 'Model 1- Cross Validation.Rmd' and in the file 'Model 1- Predictions.Rmd
+## Which R packages are required.
+library(caret)
+library(Hmisc)
+library(ggplot2)
+library(MASS)
+library(dplyr)
+library(glmnet)
+
+
+
