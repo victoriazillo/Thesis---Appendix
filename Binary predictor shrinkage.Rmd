@@ -1,0 +1,154 @@
+In this file, we explore the application of the local shrinkage algorithm to a model containing an asymmetric binary predictor
+
+Loading of libraries and dataset
+```{r}
+library(Hmisc)
+library(ggplot2)
+library(MASS)
+library(tidyr)
+library(dplyr)
+
+getHdata(gusto)
+gusto.dat <- gusto
+
+
+
+gusto.dat <- gusto[which(gusto$grpl %in% c(1,2,4) & gusto$grps %in% c(5,9,10,11)),] 
+n_pat <- nrow(gusto.dat)  #conta quanti pazienti hai dopo il filtro: 1214
+gusto.dat$pat.id <- 1:n_pat
+
+```
+
+Binary predictors shrinkage
+
+Model: height + shock where shock is a binary predictor highly asymmetric
+
+```{r}
+gusto.dat$SHO <- gusto.dat$sho 
+gusto.dat$WEI <- gusto.dat$weight
+gusto.dat$HEI <- gusto.dat$height
+
+form1 <- WEI ~ HEI + SHO #model
+
+table(gusto.dat$SHO)
+```
+
+local shrinkage
+```{r}
+X_ols <- model.matrix(~HEI+SHO, data=gusto.dat)
+XTX <- t(X_ols)%*%X_ols
+
+relvar_OLS <- numeric(length = nrow(X_ols))  
+for(i in 1:length(relvar_OLS)){
+  relvar_OLS[i] <- (t(X_ols[i,])%*%solve(XTX)%*%X_ols[i,])
+}
+
+n <- nrow(X_ols)
+dist_ShoHei <- (n*relvar_OLS)-1
+
+
+
+dist_df <- data.frame(
+  pat.id = gusto.dat$pat.id,
+  distance = dist_ShoHei
+)
+
+
+Z_ols      <- X_ols[,-1] 
+n          <- nrow(Z_ols)
+Z_shrink   <- Z_ols
+relvar_it  <- relvar_OLS
+z_bar      <- colMeans(Z_shrink)
+zc         <- t(apply(X=Z_shrink, MARGIN = 1, FUN = function(x){x-z_bar}))
+X_shrink   <- cbind(icpt=rep(1,n), Z_shrink)
+
+iter       <- 0
+maxiter    <- 1000
+
+dist       <- n*relvar_it - 1
+diststart  <- dist
+max_dist   <- (n/200) -1
+
+while(max(dist) > max_dist & iter < maxiter){
+  
+  distshrink  <- dist
+  distshrink[which(dist>max_dist)] <- max_dist
+  
+  a           <- sqrt(distshrink/dist)
+  azc         <- a*zc
+  Z_shrink    <- t(apply(X=azc, MARGIN = 1, FUN = function(x){x + z_bar}))
+  
+  iter <- iter + 1
+  
+  X_shrink   <- cbind(icpt=rep(1,n), Z_shrink)
+  z_bar      <- colMeans(Z_shrink)
+  zc         <- t(apply(X=Z_shrink, MARGIN = 1, FUN = function(x){x-z_bar}))
+  
+  Cov        <- ginv(t(X_shrink)%*%X_shrink)
+  relvar_it  <- diag(X_shrink %*% Cov %*% t(X_shrink))
+  n_eff      <- 1/relvar_it
+  
+  dist       <- n*relvar_it - 1
+}
+```
+
+
+Dataframe building for visualization
+```{r}
+mod_OLS_base <- lm(formula = form1, data = gusto.dat) 
+gusto_shrunk <- data.frame("WEI" = gusto.dat$weight) 
+gusto_shrunk <- cbind(gusto_shrunk, Z_shrink) 
+
+mod_OLS_shrunk <- lm(formula = form1, data = gusto_shrunk) 
+
+shrinkplot <- rbind(data.frame(relvar = relvar_OLS,
+                               pred = mod_OLS_base$fitted.values,
+                               type = "OLS"),
+                    data.frame(relvar = relvar_it,
+                               pred = mod_OLS_shrunk$fitted.values,
+                               type = "shrunk"))
+
+Z_compare      <- rbind(Z_ols, Z_shrink) 
+Z_compare      <- as.data.frame(Z_compare) 
+Z_compare$type <- shrinkplot$type 
+Z_compare$pat.id <- c(1:n, 1:n)
+```
+
+Visualization:  shock + height predictor values before and after local shrinkage
+```{r}
+ggplot(Z_compare, aes(x=SHO, y=HEI, color=type, fill=type, group=pat.id))+ 
+       geom_point(alpha=0.8)+
+       geom_line(color="grey",alpha=0.5)+
+  labs(x= "Shock", y="Height") +
+       theme_bw()
+```
+Visualization:
+
+Predictor height before and after local shrinkage. Height is colored by the shock category value
+```{r}
+wide_df <- Z_compare %>%
+  select(pat.id, type, HEI, SHO) %>%
+  pivot_wider(
+    names_from = type,
+    values_from = c(HEI, SHO)
+  )
+      
+df_sho0 <- wide_df[wide_df$SHO_OLS == 0, ] 
+df_sho1 <- wide_df[wide_df$SHO_OLS == 1, ]
+
+xrange <- range(c(df_sho0$HEI_OLS, df_sho1$HEI_OLS))
+yrange <- range(c(df_sho0$HEI_shrunk, df_sho1$HEI_shrunk))
+
+plot(df_sho0$HEI_OLS, df_sho0$HEI_shrunk,
+     col="blue", pch=16,
+     xlim=xrange, ylim=yrange,
+     xlab="HEI OLS", ylab="HEI shrunk", main= "model: height + shock")
+
+points(df_sho1$HEI_OLS, df_sho1$HEI_shrunk,
+       col="red", pch=16)
+legend("topleft",
+       legend = c("shock = 0", "shock = 1"),
+       col = c("blue", "red"),
+       pch = 16)
+```
+
