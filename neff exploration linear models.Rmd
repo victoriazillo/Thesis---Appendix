@@ -1,0 +1,367 @@
+In this file the effective sample size distribution is explored for models based on the GUSTO data set.
+
+```{r}
+library(Hmisc)
+library(rms)
+library(forcats)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+getHdata(gusto)
+gusto.dat <- gusto
+```
+
+Subset of data used
+```{r}
+#Create a subset of the data with centers from US region and one non-US region
+gusto.dat <- gusto[which(gusto$grpl %in% c(1,2,4) & gusto$grps %in% c(5,9,10,11)),] 
+n_pat <- nrow(gusto.dat) 
+gusto.dat$pat.id <- 1:n_pat #new variable patient id
+#summary(gusto.dat)
+
+
+colSums(is.na(gusto.dat))
+```
+
+Model with one predictor: age
+```{r}
+## goal: Calculate effective sample sizes
+X_ols_age <- model.matrix(~age, data=gusto.dat)  # predictor age matrix 
+XTX <- t(X_ols_age)%*%X_ols_age  
+
+n_eff_OLS_A <- numeric(length = nrow(X_ols_age)) #computes the effective sample size
+for(i in 1:length(n_eff_OLS_A)){
+  A <- solve(XTX)%*%X_ols_age[i,]
+  n_eff_OLS_A[i] <- 1/(t(X_ols_age[i,])%*%A)      
+} 
+neff_all <- data.frame(pat.id = (1:nrow(X_ols_age)),form="form0", n_eff_OLS_A = n_eff_OLS_A)   
+
+
+```
+
+Min and Max of age effective sample size distribution:
+```{r}
+range(neff_all$n_eff_OLS_A)  
+```
+
+Visualization: Effective Sample Size vs Age:
+```{r}
+neff_all$age <- gusto.dat$age 
+
+ggplot( neff_all , mapping = aes(x= age, y= n_eff_OLS_A, colour = n_eff_OLS_A)) +
+  geom_point( alpha= 0.8) +
+  scale_color_gradientn(colours=rainbow(3)) +
+  labs(
+    title = "Effective n* for age OLS predictor",
+    x = "Age",
+    y = "Effective n*",
+    colour = "Effective n*"
+  )
+```
+
+Model with one predictor: height
+```{r}
+X_ols_height <- model.matrix(~height, data=gusto.dat)  #predictor height matrix
+XTX <- t(X_ols_height)%*%X_ols_height
+
+n_eff_OLS_H <- numeric(length = nrow(X_ols_height)) #computes the effective sample size
+for(i in 1:length(n_eff_OLS_H)){
+  A <- solve(XTX)%*%X_ols_height[i,]
+  n_eff_OLS_H[i] <- 1/(t(X_ols_height[i,])%*%A)      
+} 
+
+neff_all$n_eff_OLS_H <- n_eff_OLS_H
+neff_all$height <- gusto.dat$height
+
+summary(n_eff_OLS_H)
+```
+
+Visualization: Effective Sample Size vs Height:
+```{r}
+ggplot( neff_all , mapping = aes(x= height, y= n_eff_OLS_H, colour = n_eff_OLS_H)) +
+  geom_point( alpha= 0.8) +
+  scale_color_gradientn(colours=rainbow(3)) +
+  labs(title = "Effective n for height OLS predictor") +
+  ylab( "Effective n ")
+```
+
+Min and Max of height  effective sample size distribution:
+```{r}
+range(neff_all$n_eff_OLS_H)
+```
+
+Model with two predictors: age + height
+```{r}
+
+X_ols <- model.matrix(~age+height, data=gusto.dat)   #predictor matrix |age + height|
+XTX <- t(X_ols)%*%X_ols
+
+n_eff_OLS <- numeric(length = nrow(X_ols)) #compute the effective sample size
+for(i in 1:length(n_eff_OLS)){
+  A <- solve(XTX)%*%X_ols[i,]
+  n_eff_OLS[i] <- 1/(t(X_ols[i,])%*%A)
+}
+summary(n_eff_OLS)
+```
+
+Visualization : Age and Height observations colored by their effective sample size
+```{r}
+neff_all$n_eff_OLS <- n_eff_OLS
+neff_all$age <- gusto.dat$age
+neff_all$height <- gusto.dat$height
+
+ggplot(neff_all, aes(x=age, y=height, color=n_eff_OLS, fill=n_eff_OLS))+ 
+       geom_point(alpha=0.8)+
+       scale_fill_gradientn(colours=rainbow(3))+
+       scale_color_gradientn(colours=rainbow(3))+
+       theme_bw()+
+       labs(fill = "Effective n*", color="Effective n*", title = "Effective n* for age and height OLS predictors") +
+       xlab("Age in years")+
+       ylab("Height in cm")
+
+```
+
+Measures:
+
+Subjects with effective sample size > 1200 in 1D (one predictor) vs 2D age and  height:
+
+AGE 
+```{r}
+range(neff_all$age[n_eff_OLS_A>1200])
+range(neff_all$age[n_eff_OLS >1200])
+```
+
+HEIGHT 
+```{r}
+range(neff_all$height[n_eff_OLS_H>1200])
+range(neff_all$height[n_eff_OLS>1200])
+```
+
+Percentage of subjects per interval
+```{r}
+mean(neff_all$n_eff_OLS > 1200) * 100
+mean(neff_all$n_eff_OLS_A > 1200) * 100
+mean(neff_all$n_eff_OLS_H > 1200) * 100
+```
+
+900 e 1200
+```{r}
+mean(neff_all$n_eff_OLS > 900 & neff_all$n_eff_OLS <= 1200) * 100
+mean(neff_all$n_eff_OLS_A > 900 & neff_all$n_eff_OLS_A <= 1200) * 100
+mean(neff_all$n_eff_OLS_H > 900 & neff_all$n_eff_OLS_H<= 1200) * 100
+```
+
+600 e 900
+```{r}
+mean(neff_all$n_eff_OLS > 600 & neff_all$n_eff_OLS <= 900) * 100
+mean(neff_all$n_eff_OLS_A > 600 & neff_all$n_eff_OLS_A <= 900) * 100
+mean(neff_all$n_eff_OLS_H > 600 & neff_all$n_eff_OLS_H <= 900) * 100
+```
+
+300 e 600
+
+```{r}
+mean(neff_all$n_eff_OLS > 300 & neff_all$n_eff_OLS <= 600) * 100
+mean(neff_all$n_eff_OLS_A > 300 & neff_all$n_eff_OLS_A <= 600) * 100
+mean(neff_all$n_eff_OLS_H > 300 & neff_all$n_eff_OLS_H <= 600) * 100
+```
+
+less than 300
+```{r}
+mean(neff_all$n_eff_OLS <=300) * 100
+mean(neff_all$n_eff_OLS_A<=300) * 100
+mean(neff_all$n_eff_OLS_H <=300) * 100
+```
+
+
+Model with two continuous correlated predictors weight and height
+```{r}
+#weight and height corr= 55%
+
+X_ols_cor <- model.matrix(~weight+height, data=gusto.dat)
+XTX <- t(X_ols_cor)%*%X_ols_cor
+
+n_eff_OLS_cor <- numeric(length = nrow(X_ols_cor))
+for(i in 1:length(n_eff_OLS_cor)){
+  A <- solve(XTX)%*%X_ols_cor[i,]
+  n_eff_OLS_cor[i] <- 1/(t(X_ols_cor[i,])%*%A)
+}
+
+#Visualization:
+neff_all$n_eff_OLS_cor <- n_eff_OLS_cor
+neff_all$weight <- gusto.dat$weight
+
+ggplot(neff_all, aes(x=weight, y=height, color=n_eff_OLS_cor, fill=n_eff_OLS_cor))+ 
+       geom_point(alpha=0.8)+
+       scale_fill_gradientn(colours=rainbow(3))+
+       scale_color_gradientn(colours=rainbow(3))+
+       theme_bw()+
+       labs(fill = "Effective n", color="Effective n", title = "EFF. SAMPLE SIZE OLS for weight and height") +
+       xlab("weight")+
+       ylab("Height")
+
+```
+
+Measures:
+
+Percentage of subjects per interval
+```{r}
+mean(neff_all$n_eff_OLS > 1200) * 100
+mean(neff_all$n_eff_OLS_cor > 1200) * 100
+```
+-
+```{r}
+mean(neff_all$n_eff_OLS > 900 & neff_all$n_eff_OLS <= 1200) * 100
+mean(neff_all$n_eff_OLS_cor > 900 & neff_all$n_eff_OLS_cor <= 1200) * 100
+```
+-
+```{r}
+mean(neff_all$n_eff_OLS > 600 & neff_all$n_eff_OLS <= 900) * 100
+mean(neff_all$n_eff_OLS_cor > 600 & neff_all$n_eff_OLS_cor <= 900) * 100
+```
+-
+```{r}
+mean(neff_all$n_eff_OLS > 300 & neff_all$n_eff_OLS <= 600) * 100
+mean(neff_all$n_eff_OLS_cor > 300 & neff_all$n_eff_OLS_cor <= 600) * 100
+```
+-
+```{r}
+mean(neff_all$n_eff_OLS <=300) * 100
+mean(neff_all$n_eff_OLS_cor <=300) * 100
+```
+
+Model with one continuous predictor (age) and one binary predictor (sex)
+```{r}
+X_ols_bin <- model.matrix(~sex+age, data=gusto.dat)
+XTX <- t(X_ols_bin)%*%X_ols_bin
+
+n_eff_OLS_bin <- numeric(length = nrow(X_ols_bin)) #effective sample size
+for(i in 1:length(n_eff_OLS_bin)){
+  A <- solve(XTX)%*%X_ols_bin[i,]
+  n_eff_OLS_bin[i] <- 1/(t(X_ols_bin[i,])%*%A)
+}
+
+neff_all$sex <- gusto.dat$sex
+neff_all$age <- gusto.dat$age
+neff_all$n_eff_OLS_bin <- n_eff_OLS_bin
+summary(n_eff_OLS_bin)
+```
+
+
+
+Model with 7 predictors "f7" and model with 15 predictors "f15" 
+```{r}
+gusto.dat$SBP_trunc <- pmin(gusto.dat$sysbp, 120)
+
+f7 <- model.matrix( ~ tx + age + Killip + SBP_trunc + lsp(pulse, 50) + pmi + miloc, data=gusto.dat)
+
+
+f15 <- model.matrix( ~ tx + age + Killip + SBP_trunc + lsp(pulse, 50) + pmi + miloc + rms::rcs(height, 6) + smk + dia + weight + prevcabg + htn + prevcvd + ttr +age*Killip , data=gusto.dat)
+```
+
+effective sample size of model "f7"
+```{r}
+XTX <- t(f7)%*%f7
+
+n_eff_OLS_f7 <- numeric(length = nrow(f7))
+for(i in 1:length(n_eff_OLS_f7)){
+  A <- solve(XTX)%*%f7[i,]
+  n_eff_OLS_f7[i] <- 1/(t(f7[i,])%*%A)       
+} 
+
+neff_all$n_eff_OLS_f7 <- n_eff_OLS_f7
+
+```
+
+effective sample size of model "f15"
+```{r}
+XTX <- t(f15)%*%f15
+
+n_eff_OLS_f15 <- numeric(length = nrow(f15))
+for(i in 1:length(n_eff_OLS_f15)){
+  A <- solve(XTX)%*%f15[i,]
+  n_eff_OLS_f15[i] <- 1/(t(f15[i,])%*%A)       
+} 
+
+neff_all$n_eff_OLS_f15 <- n_eff_OLS_f15
+```
+
+Measures model "f5" and model "f17":
+```{r}
+mean(neff_all$n_eff_OLS_f7 > 1200) * 100
+mean(neff_all$n_eff_OLS_f15 > 1200) * 100
+```
+
+tra 900 e 1200
+```{r}
+mean(neff_all$n_eff_OLS_f7 > 900 & neff_all$n_eff_OLS_f7 <= 1200) * 100
+mean(neff_all$n_eff_OLS_f15 > 900 & neff_all$n_eff_OLS_f15 <= 1200) * 100
+```
+tra 600 e 900
+```{r}
+mean(neff_all$n_eff_OLS_f7 > 600 & neff_all$n_eff_OLS_f7 <= 900) * 100
+mean(neff_all$n_eff_OLS_f15 > 600 & neff_all$n_eff_OLS_f15 <= 900) * 100
+```
+
+tra 300 e 600
+```{r}
+mean(neff_all$n_eff_OLS_f7 > 300 & neff_all$n_eff_OLS_f7 <= 600) * 100
+mean(neff_all$n_eff_OLS_f15 > 300 & neff_all$n_eff_OLS_f15 <= 600) * 100
+```
+less than 300
+```{r}
+mean(neff_all$n_eff_OLS_f7 <=300) * 100
+mean(neff_all$n_eff_OLS_f15 <=300) * 100
+```
+
+
+Visualization:
+
+effective sample size density per model
+```{r}
+
+neff_long <- neff_all %>%
+  select(n_eff_OLS_f15,
+         n_eff_OLS_f7,
+         n_eff_OLS_A,
+         n_eff_OLS,
+         n_eff_OLS_bin) %>%
+  pivot_longer(cols = everything(),
+               names_to = "modello",
+               values_to = "ESS")  %>%
+  mutate(modello = factor(modello,
+                          levels = c("n_eff_OLS_A",
+                                     "n_eff_OLS_H",
+                                     "n_eff_OLS_bin",
+                                     "n_eff_OLS_f7",
+                                     "n_eff_OLS_f15")))
+
+```
+
+Visualization effective sample size density per model
+```{r}
+
+ggplot(neff_long, aes(x = ESS, color = modello)) +
+  geom_density(linewidth = 1.2) +
+  labs(x = "Effective Sample Size",
+       y = "Density") +
+  scale_color_discrete(name= "",labels = c("Age",
+                                  "Age + Height",
+                                  "Age + Sex",
+                                  "Model with 7 predictors",
+                                  "Model with 15 predictors")) +
+  theme_minimal() +
+  theme(
+  axis.line = element_line(),
+  axis.ticks = element_line()) +
+  
+  theme(
+    legend.position = c(0.95, 0.95),
+    legend.justification = c("right", "top")
+  )
+
+
+
+```
+
+ 
