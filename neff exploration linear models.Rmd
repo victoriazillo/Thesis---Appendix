@@ -1,4 +1,4 @@
-In this file the effective sample size distribution is explored for models based on the GUSTO data set.
+In this file the effective sample size distributions atr explored for models based on the GUSTO data set.
 
 ```{r}
 library(Hmisc)
