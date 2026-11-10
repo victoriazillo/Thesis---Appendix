@@ -1,0 +1,250 @@
+In this file the predictions of model 1 are computed on the test set . The predictions are computed for OLS, local shrinkage and ridge methods. The local shrinkage and ridge regression methods are fitted using the optimal parameter estimated in file: "model 1- Cross Validation"
+
+```{r}
+#loading of libraries and data
+library(Hmisc)
+library(ggplot2)
+library(MASS)
+library(dplyr)
+library(glmnet)
+getHdata(gusto)
+gusto.dat <- gusto
+
+set.seed(4176340)
+gusto.dat <- gusto[which(gusto$grpl %in% c(1,2,4) & gusto$grps %in% c(5,9,10,11)),]
+
+
+
+```
+
+Train and test set partition
+```{r}
+# build test and training sets.
+# parameter : size        'training size'
+size = 0.7
+
+n.1 <- nrow(gusto.dat)
+train_index <- sample(1:n.1, size = size * n.1)
+train_set <- gusto.dat[train_index, ]
+test_set  <- gusto.dat[-train_index, ]
+n_pat <- nrow(train_set)  
+train_set$pat.id <- 1:n_pat
+train_set$HEI <- train_set$height
+train_set$WEI <- train_set$weight
+train_set$AGE <- train_set$age
+train_set$SYS <- train_set$sysbp
+train_set$PUL <- train_set$pulse
+
+test_set$HEI <- test_set$height
+test_set$WEI <- test_set$weight
+test_set$AGE <- test_set$age
+test_set$SYS <- test_set$sysbp
+test_set$PUL <- test_set$pulse
+
+```
+
+Ordinary Least Squares - train set
+```{r}
+# linear OLS
+# parameter: data      'train set'
+#            form1     'response ~ predictors'
+
+form1 <- WEI ~ HEI + AGE + PUL + SYS  #model 1
+mod_OLS_base <- lm(formula = form1, data = train_set)
+X_ols <- model.matrix(~HEI+AGE+PUL+SYS, data= train_set)  
+X_ols_test <- model.matrix(~HEI+AGE+PUL+SYS, data= test_set) 
+
+
+
+XTX <- t(X_ols)%*%X_ols
+relvar_OLS <- numeric(length = nrow(X_ols))  #inverse of effective sample size for the train set is computed
+for(i in 1:length(relvar_OLS)){
+  relvar_OLS[i] <- (t(X_ols[i,])%*%solve(XTX)%*%X_ols[i,])
+} 
+```
+Ordinary Least Squares - test set predictions
+```{r}
+pred_ols <- predict(mod_OLS_base, newdata = test_set) #predictions OLS on the test set
+```
+
+
+local shrinkage algorithm:
+
+```{r}
+## Initialization training shrinkage
+
+Z_ols      <- X_ols[,-1] #predictors without intercept
+n          <- nrow(Z_ols) 
+Z_shrink   <- Z_ols    #copy of the covariates that will be shrank
+relvar_it  <- relvar_OLS #copy of hii
+z_bar      <- colMeans(Z_shrink)  #average per predictor value
+zc         <- t(apply(X=Z_shrink, MARGIN = 1, FUN = function(x){x-z_bar})) #covariates are centered
+X_shrink   <- cbind(icpt=rep(1,n), Z_shrink) #design matrix + intercept 
+iter       <- 0 
+maxiter    <- 1000
+dist       <- n*relvar_it - 1  #distance
+diststart  <- dist  
+
+```
+
+CV gives 50 as the best threshold for this model
+```{r}
+#THRESHOLD FOR SHRINKAGE.
+# parameter:  neff_min          'effective sample size'
+
+neff_min <- 50
+
+max_dist <- n*1/neff_min -1  #threshold for shrinkage
+```
+
+Local shrinkage on the training set
+```{r}
+while(max(dist) > max_dist & iter < maxiter){ #while loop until all distances are below the threshold
+  
+  ## compute the shrinked distance
+  distshrink  <- dist
+  distshrink[which(dist>max_dist)] <- max_dist 
+  
+  # compute shrinkage factor
+  a           <- sqrt(distshrink/dist)
+  
+  
+  azc         <- a*zc #  #shrink of the centered covariates
+  Z_shrink    <- t(apply(X=azc, MARGIN = 1, FUN = function(x){x + z_bar})) 
+  
+  iter <- iter + 1  
+  ## step 1
+  X_shrink   <- cbind(icpt=rep(1,n), Z_shrink)  #adding the intercept
+  
+  z_bar      <- colMeans(Z_shrink) 
+  
+  zc         <- t(apply(X=Z_shrink, MARGIN = 1, FUN = function(x){x-z_bar})) 
+  
+  
+  Cov        <- ginv(t(X_shrink)%*%X_shrink) #XTX
+  
+  relvar_it  <- diag(X_shrink %*% Cov %*% t(X_shrink))  #the inverse of XTX 
+  
+  n_eff      <- 1/relvar_it 
+  
+  dist       <- n*relvar_it - 1  
+}
+```
+
+Effective sample size computed on the test set
+```{r}
+#test set distances 
+relvar_OLS_test <- numeric(length = nrow(X_ols_test))  
+for(i in 1:length(relvar_OLS_test)){
+  relvar_OLS_test[i] <- (t(X_ols_test[i,])%*%Cov%*%X_ols_test[i,])
+}
+
+n.test <- nrow(X_ols_test)
+test_distance <- n*relvar_OLS_test-1 #test set distances
+
+sum((1/relvar_OLS_test)<50) #only 3 test set subjects have an effective sample size smaller than the threshold 
+```
+Local shrinkage on the test set
+```{r}
+distshrink_test <- pmin(test_distance, max_dist) #distance shrinkage
+
+a_test <-  sqrt(distshrink_test / test_distance) #tesy shrinkage factor
+
+Z_ols_test   <- X_ols_test[,-1] 
+
+Z_shrink_test <- Z_ols_test 
+
+relvar_it_test <- relvar_OLS_test
+
+zc_test        <- t(apply(X=Z_shrink_test, MARGIN = 1, FUN = function(x){x-z_bar})) 
+
+azc_test <-zc_test*a_test #shrinking the new subjects (test set) covariates 
+
+Z_shrink_test    <- t(apply(X=azc_test, MARGIN = 1, FUN = function(x){x + z_bar})) #shrunk predictors
+
+X_shrink_test <- cbind(icpt=rep(1,n.test), Z_shrink_test) 
+
+```
+
+Train set model fit on shrunk covariates
+```{r}
+train_shrunk <- data.frame("WEI" = train_set$weight) 
+
+train_shrunk <- cbind(train_shrunk, Z_shrink) #dataframe with weight observed and shrunk train covariates
+
+mod_OLS_shrunk <- lm(formula = form1, data = train_shrunk) #linear regression with shrunk train covariates
+
+#building dataframe for visualization:
+shrinkplot <- rbind(data.frame(relvar = relvar_OLS, 
+                               pred = mod_OLS_base$fitted.values, 
+                               type = "OLS"), 
+                    data.frame(relvar = relvar_it, 
+                               pred = mod_OLS_shrunk$fitted.values, 
+                               type = "shrunk"))
+shrinkplot$pat.id <- c(1:n, 1:n)
+
+Z_compare      <- rbind(Z_ols, Z_shrink) 
+
+Z_compare     <- as.data.frame(Z_compare) 
+
+Z_compare$type <- shrinkplot$type 
+
+Z_compare$pat.id <- c(1:n, 1:n) 
+```
+
+
+Test set- local shrinkage predictions
+```{r}
+test_shrunk <- data.frame("WEI" = test_set$weight) #observed test reponse weight
+
+test_shrunk <- cbind(test_shrunk, Z_shrink_test) #data frame with weight observed and shrunk covariates
+
+pred_local_test <- predict(mod_OLS_shrunk,newdata= test_shrunk) #predictions
+
+```
+
+
+Visualization of predictions: OLS and Local shrinkage
+ 
+```{r}
+ggplot(
+  data = data.frame(pred_ols = pred_ols,
+                    pred_local_test = pred_local_test),
+  aes(x = pred_ols, y = pred_local_test)
+) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, color = "red") +
+  labs(
+    x = "OLS predictions",
+    y = "Local shrinkage predictions"
+  ) +
+  theme_bw()
+```
+
+Ridge regression, model 1
+
+```{r}
+x_train <- model.matrix( ~ HEI + AGE + PUL + SYS, train_set)[,-1] 
+y_train <- train_set$WEI
+x_test <- model.matrix( ~ HEI + AGE + PUL + SYS, test_set)[,-1] 
+
+ridge_fit <- glmnet(
+  x_train,
+  y_train,
+  alpha = 0, #ridge regression
+  lambda = 0.1
+)
+
+pred_ridge <- predict(  #ridge test set predictions
+  ridge_fit,
+  newx = x_test,
+  s = 0.1
+)
+```
+
+Visualization of predictions:  ridge regression and local shrinkage
+```{r}
+plot(x= pred_ridge, y= pred_local_test, xlab = "Ridge predictions", ylab = "Local shrinkage predictions", main = "Predictions ridge vs local shrinkage")
+abline(a = 0, b = 1, col= "red")
+```
+
