@@ -11,9 +11,9 @@ I suggest to run the Rcode in the order that are presented below. The local shri
 
 2. The folder Model 1 contains two R Markdown files:
 
-Model 1 - Cross Validation.Rmd: contains the implementation of the local shrinkage algorithm, adapted to perform cross-validation for Model 1.
+- Model 1 - Cross Validation.Rmd: contains the implementation of the local shrinkage algorithm, adapted to perform cross-validation for Model 1.
 
-Model 1 - Predictions.Rmd: contains the code used to calculate the predictions for Model 1.
+- Model 1 - Predictions.Rmd: contains the code used to calculate the predictions for Model 1.
 
 3. The file 'Binary predictor shrinkage.Rmd' explores the shrinkage of binary predictors using the local shrinkage algorithm.
 
