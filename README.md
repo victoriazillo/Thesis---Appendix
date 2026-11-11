@@ -17,7 +17,8 @@ I suggest to run the Rcode in the order that are presented below. The local shri
 
 3. The file 'Binary predictor shrinkage.Rmd' explores the shrinkage of binary predictors using the local shrinkage algorithm.
 
-4. The file 'Simulation study - Model 1.Rmd' contains the comparison of predictions between methods (local shrinkage - ridge regression - OLS) for model 1 in a simulated setting.
+4. The fold 'Simulation study - model 1' contains the comparison of predictions between methods (local shrinkage - ridge regression - OLS) for model 1 in a simulated setting (Rmd file) and the CSV file where simulated predictions for the local shrinkage algorithm were saved.
+5. The fold 'Simulation study - model 4' contains the simulation study (Rmd and CSV file) for model 4
 ## Which R packages are required.
 
     library(caret)
