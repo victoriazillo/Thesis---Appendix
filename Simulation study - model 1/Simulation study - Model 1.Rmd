@@ -697,7 +697,6 @@ abline(a=0, b=1, col= "purple")
 
 ```
 
-
 boxplot of variance distribution per method: ols, ridge, local
 ```{r}
 df_var_wide <- data.frame(OLS = var_ols , Ridge= var_ridge  , Local_Shrinkage=var_local )
