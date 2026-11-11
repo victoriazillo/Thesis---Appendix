@@ -163,10 +163,22 @@ Global shrinkage: ridge regression CV
 
 x <- model.matrix( ~ HEI + AGE + PUL + SYS, gusto.dat)[,-1] 
 y <- gusto.dat$WEI
-cv_ridge <- cv.glmnet( x, y, alpha = 0, lambda =  c(1, 0.5,0.1,0.05,0.02,0.01, 0),nfolds = 5, foldid = fold_k5  )  #cv using the same folds as local shrinkage
+cv_ridge <- cv.glmnet( x, y, alpha = 0, lambda =  c(1, 0.5,0.1,0.05,0.02,0.01, 0), keep = T,foldid = fold_k5  )  #cv using the same folds as local shrinkage
 
 cv_ridge$lambda.min
-cv_ridge$cvm[cv_ridge$lambda == cv_ridge$lambda.min] #optimal lambda is 0.1
+
+j <- which(cv_ridge$lambda == 0.1)
+
+#predictions out of fold
+pred <- cv_ridge$fit.preval[, j]
+
+# MSE per fold
+mse_fold <- sapply(1:5, function(i) {
+  idx <- fold_k5 == i
+  mean((y[idx] - pred[idx])^2)
+})
+
+mean(mse_fold)
 ```
 
 

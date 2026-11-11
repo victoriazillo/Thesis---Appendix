@@ -31,7 +31,6 @@ Function for local shrinkage:
 1- Cross validation function to find the optimal threshold:
 ```{r}
 
-
 Cross_val_local_shrik <- function(neff, newdata,fold_k) { 
   
   mse <- rep(0,5)
@@ -291,7 +290,7 @@ for (alpha_ridge in 1:N_sim) {
   
   x = as.matrix(newdata[, c('HEI', 'SYS', 'AGE', 'PUL')]) #predictor matrix
   
-  cv_ridge <- cv.glmnet(x= x,y= newdata$y_sim, alpha=0,  lambda= c(1, 0.5,0.1,0.05,0.02,0.01, 0), foldid = fold_k5) #cross validation
+  cv_ridge <- cv.glmnet(x= x,y= newdata$y_sim, alpha=0,  lambda= c(1, 0.5,0.1,0.05,0.02,0.01, 0),foldid = fold_k5) #cross validation
   
   lambda_i <- cv_ridge$lambda.min
   
