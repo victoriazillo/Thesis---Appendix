@@ -304,7 +304,23 @@ for (alpha_ridge in 1:N_sim) {
 ```
 
 
-for loop local: creation of a file csv to save the predictions
+for loop local shrinkage:
+
+To load the CSV file that already contains the local shrinkage predictions (previously calculated and saved in the file 'Simulation_Model_1_LocalPredictions.csv'), read this file on the next chunk and skip the following code until the RESULTS section:
+```{r}
+data_end <- read.csv(
+  "Simulation_Model_1_LocalPredictions.csv",
+  header = FALSE
+)
+data_local <- t(data_end)
+dim(data_local)
+pred_fileLocal <- as.data.frame(data_local)
+```
+
+
+Otherwise you can create the file from scratch and run the code below
+
+creation of a file csv to save the predictions:
 
 from column 1 to 20 
 ```{r}
@@ -545,6 +561,8 @@ for (alpha_local in 81:100) {
 }
 ```
 
+The creation and completion of the test_Model_1.csv file is now finished. You can read the newly created file in the code below.
+
 
 Read the completed csv file:
 ```{r}
@@ -556,7 +574,13 @@ data_local <- t(data_end)
 dim(data_local)
 pred_fileLocal <- as.data.frame(data_local)
 ```
-MSE model 1.
+
+
+
+RESULTS
+
+
+MSE model 1
 ```{r}
 MSE_OLS <- colMeans(   #OLS
   (pred_sim_ols- mu_i)^2   
