@@ -81,7 +81,7 @@ Cross_val_local_shrik <- function(neff, newdata,fold_k) {
       a           <- sqrt(distshrink/dist)
   
   
-      azc         <- a*zc #  #shrink of the centered covariates
+      azc         <- a*zc #shrink of the centered covariates
       Z_shrink    <- t(apply(X=azc, MARGIN = 1, FUN = function(x){x + z_bar})) #adding the mean back
   
       iter <- iter + 1  
@@ -92,13 +92,13 @@ Cross_val_local_shrik <- function(neff, newdata,fold_k) {
   
       zc         <- t(apply(X=Z_shrink, MARGIN = 1, FUN = function(x){x-z_bar})) #re-center 
   
-      Cov        <- ginv(t(X_shrink)%*%X_shrink) #compute the shrunk XTX
+      Cov        <- ginv(t(X_shrink)%*%X_shrink) #recompute the shrunk XTX
   
       relvar_it  <- diag(X_shrink %*% Cov %*% t(X_shrink))  
   
-      n_eff      <- 1/relvar_it #re-compute the effective sample sizes
+      n_eff      <- 1/relvar_it #recompute the effective sample sizes
   
-      dist       <- n*relvar_it - 1  #re-compute the distance
+      dist       <- n*relvar_it - 1  #recompute the distance
       }
 
 

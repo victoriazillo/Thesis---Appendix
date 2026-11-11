@@ -1,0 +1,781 @@
+Simulation study - model 4
+
+In this file a simulation study is conducted. The predicted values per method (ols - ridge regression -local shrinkage) are computed per simulated data set. The predicted values are then compared with the true values , known by design.
+```{r}
+library(glmnet)
+library(Hmisc)
+library(ggplot2)
+library(MASS)
+library(tidyr)
+getHdata(gusto)
+gusto.dat <- gusto
+
+set.seed(4176340)
+
+
+gusto.dat <- gusto[which(gusto$grpl %in% c(1,2,4) & gusto$grps %in% c(5,9,10,11)),] 
+n_pat <- nrow(gusto.dat)  
+gusto.dat$pat.id <- 1:n_pat
+
+#V_1 is log-normally distributed
+gusto.dat$V_1 <- rlnorm(
+  n = nrow(gusto.dat),
+  meanlog = log(gusto.dat$sysbp),
+  sdlog = 0.5)
+
+#V_2 is exponentially distributed:
+gusto.dat$V_2 <- rexp(
+  n = nrow(gusto.dat),
+  rate= 1/gusto.dat$sysbp)
+
+gusto.dat$SYS <- gusto.dat$sysbp
+gusto.dat$AGE <- gusto.dat$age
+gusto.dat$PUL <- gusto.dat$pulse
+```
+
+
+
+Functions for local shrinkage:
+
+1- Cross validation to find the optimal threshold
+```{r}
+Cross_val_local_shrik <- function(neff, newdata,fold_k) { 
+  
+  mse <- rep(0,5)
+  
+  for(i in 1:5){
+    train <- newdata[fold_k != i, ] 
+    test  <- newdata[fold_k == i, ]
+  
+    
+    #train set
+    form1 <- y_sim ~ AGE + V_1 + V_2+ PUL 
+    
+    mod_OLS_base <- lm(formula = form1, data = train)
+    
+    X_ols <- model.matrix( ~ AGE + V_1 + V_2+ PUL , data= train)  
+    XTX <- t(X_ols)%*%X_ols
+    
+    relvar_OLS <- numeric(length = nrow(X_ols)) 
+    for(v in 1:length(relvar_OLS)){
+      relvar_OLS[v] <- (t(X_ols[v,])%*%solve(XTX)%*%X_ols[v,])}
+    
+    #initialization
+    
+    Z_ols      <- X_ols[,-1] 
+    n          <- nrow(Z_ols) 
+    Z_shrink   <- Z_ols    
+    relvar_it  <- relvar_OLS 
+    z_bar      <- colMeans(Z_shrink) 
+    zc         <- t(apply(X=Z_shrink, MARGIN = 1, FUN = function(x){x-z_bar})) 
+    
+    X_shrink   <- cbind(icpt=rep(1,n), Z_shrink) 
+    iter       <- 0 
+    maxiter    <- 1000
+    dist       <- n*relvar_it - 1  
+    diststart  <- dist  
+    max_dist <- n*1/neff-1 
+    
+  
+ 
+    Cov <- ginv(t(X_shrink)%*%X_shrink) 
+    
+    #loop while
+    while(max(dist) > max_dist & iter < maxiter){ #while loop until all distances are below the threshold
+  
+  # compute the shrunk distance
+      distshrink  <- dist
+      distshrink[which(dist>max_dist)] <- max_dist #if dist > max_dist , dist is shrunk
+  
+  # compute shrinkage factor
+      a           <- sqrt(distshrink/dist)
+  
+  
+      azc         <- a*zc #shrink of the centered covariates
+      Z_shrink    <- t(apply(X=azc, MARGIN = 1, FUN = function(x){x + z_bar})) #adding the mean 
+  
+      iter <- iter + 1  
+      X_shrink   <- cbind(icpt=rep(1,n), Z_shrink)  #adding the intercept to the shrunk predictors
+   
+      z_bar      <- colMeans(Z_shrink) #calculating the mean of the shrunk covariates
+  
+      zc         <- t(apply(X=Z_shrink, MARGIN = 1, FUN = function(x){x-z_bar})) #recenter adding the mean computed after covariates shrinkage
+  
+  
+      Cov        <- ginv(t(X_shrink)%*%X_shrink) #recompute the inverse of shrunk XTX
+  
+      relvar_it  <- diag(X_shrink %*% Cov %*% t(X_shrink))  
+  
+      n_eff      <- 1/relvar_it #recompute the effective sample size
+  
+      dist       <- n*relvar_it - 1  #recompute the distance
+      }
+
+  train_shrunk <- data.frame("y_sim" = train$y_sim) 
+  train_shrunk <- cbind(train_shrunk, Z_shrink)
+  mod_train_shrink <- lm(formula = form1, data = train_shrunk )
+  
+  #test set:
+  X_ols_test <- model.matrix(~ AGE + V_1 + V_2+ PUL , data= test)
+  
+  relvar_OLS_test <- numeric(length = nrow(X_ols_test))  
+  
+  for(k in 1:length(relvar_OLS_test)){
+    relvar_OLS_test[k] <- (t(X_ols_test[k,])%*%Cov%*%X_ols_test[k,])}
+  
+  n.test <- nrow(X_ols_test)
+  test_distance <- n*relvar_OLS_test-1 #test set distances
+  
+  # shrink test set
+  distshrink_test <- pmin(test_distance, max_dist)
+  a_test <-  sqrt(distshrink_test / test_distance)
+  
+  
+  Z_ols_test   <- X_ols_test[,-1] 
+  
+  Z_shrink_test <- Z_ols_test 
+  relvar_it_test <- relvar_OLS_test
+
+  zc_test        <- t(apply(X=Z_shrink_test, MARGIN = 1, FUN = function(x){x-z_bar})) #center the covariates of the test set
+  azc_test <-zc_test*a_test #shrinking the test set covariates 
+  Z_shrink_test    <- t(apply(X=azc_test, MARGIN = 1, FUN = function(x){x + z_bar})) #adding the mean 
+  X_shrink_test <- cbind(icpt=rep(1,n.test), Z_shrink_test) 
+  
+  #compute MSE
+  test_shrunk <- data.frame("y_sim" = test$y_sim) 
+  
+  test_shrunk <- cbind(test_shrunk, Z_shrink_test)
+
+  dim(Z_shrink)
+  pred <- predict(mod_train_shrink, newdata = test_shrunk)
+
+  
+  mse[i] <-  mean((test$y_sim- pred)^2)}
+
+  mse_i <- mean(mse) #mean MSE
+  
+  return(mse_i)
+}
+
+
+```
+
+
+2- Local shrinkage function for prediction in simulated data
+```{r} 
+local_shrik <- function(neff, newdata) { #function(threshold,data set)
+  
+    form1 <- y_sim ~ AGE + V_1 + V_2+ PUL  #model
+    
+    mod_OLS_base <- lm(formula = form1, data = newdata) #linear regression
+    
+    X_ols <- model.matrix( ~ AGE + V_1 + V_2+ PUL , data= newdata)  
+    XTX <- t(X_ols)%*%X_ols
+    
+    #computing the inverse of the effective sample size per each subject in the sample
+    relvar_OLS <- numeric(length = nrow(X_ols))
+    for(j in 1:length(relvar_OLS)){
+      relvar_OLS[j] <- (t(X_ols[j,])%*%solve(XTX)%*%X_ols[j,])}
+    
+    #initialization of local shrinkage algorithm
+    Z_ols      <- X_ols[,-1] 
+    n          <- nrow(Z_ols) 
+    Z_shrink   <- Z_ols    
+    relvar_it  <- relvar_OLS 
+    z_bar      <- colMeans(Z_shrink) 
+    zc         <- t(apply(X=Z_shrink, MARGIN = 1, FUN = function(x){x-z_bar})) 
+    
+    X_shrink   <- cbind(icpt=rep(1,n), Z_shrink) 
+    iter       <- 0 
+    maxiter    <- 1000
+    dist       <- n*relvar_it - 1  
+    diststart  <- dist  
+    max_dist <- n*1/neff-1 
+
+    Cov <- ginv(t(X_shrink)%*%X_shrink) 
+    
+    
+    #while loop:
+    while(max(dist) > max_dist & iter < maxiter){ #while loop until all distances are below the threshold
+  
+  # compute the shrunk distance
+      distshrink  <- dist
+      distshrink[which(dist>max_dist)] <- max_dist #if dist > max_dist , dist is shrunk
+  
+  # compute shrinkage factor
+      a           <- sqrt(distshrink/dist)
+  
+  
+      azc         <- a*zc  #shrinkage of the centered covariates
+      Z_shrink    <- t(apply(X=azc, MARGIN = 1, FUN = function(x){x + z_bar})) #adding the mean 
+  
+      iter <- iter + 1  
+
+      X_shrink   <- cbind(icpt=rep(1,n), Z_shrink)  #adding the intercept to the shrunk predictors
+   
+      z_bar      <- colMeans(Z_shrink) # calculating the mean of the shrunk covariates
+  
+      zc         <- t(apply(X=Z_shrink, MARGIN = 1, FUN = function(x){x-z_bar})) #re-center adding the mean computed after covariates shrinkage
+  
+  
+      Cov        <- ginv(t(X_shrink)%*%X_shrink) #recompute the shrunk XTX
+  
+      relvar_it  <- diag(X_shrink %*% Cov %*% t(X_shrink))  #recompute  the inverse of XTX 
+  
+      n_eff      <- 1/relvar_it #recompute the effective sample size per subject in the sample
+  
+      dist       <- n*relvar_it - 1  #recompute the distance
+      }
+
+
+  newdata_shrunk <- data.frame("y_sim" = newdata$y_sim) 
+  newdata_shrunk <- cbind(newdata_shrunk, Z_shrink)
+  
+  mod_newdata_shrink <- lm(formula = form1, data = newdata_shrunk ) #fitting the model on shrunk covariates
+  
+  pred_localS <- mod_newdata_shrink$fitted.values #fitted values
+  
+  return(pred_localS)
+  
+}
+```
+
+Simulation: true model
+```{r}
+#variables considered in the model
+gusto.dat$SYS <- gusto.dat$sysbp
+gusto.dat$AGE <- gusto.dat$age
+gusto.dat$PUL <- gusto.dat$pulse
+
+
+
+#true data
+lm_original <- lm(SYS ~ AGE + V_1 + V_2 + PUL  , data = gusto.dat) #true model
+summary(lm_original)
+
+mu_i <- lm_original$fitted.values #true values
+
+sigma <- summary(lm_original)$sigma
+
+N_sim <- 100
+
+
+#Empty matrix
+pred_sim_ols <- matrix(NA, nrow = nrow(gusto.dat), ncol = N_sim)
+
+pred_sim_ridge <- matrix(NA, nrow = nrow(gusto.dat), ncol = N_sim)
+
+pred_sim_localS <- matrix(NA, nrow = nrow(gusto.dat), ncol = N_sim)
+
+opti_neff_sim <- numeric(N_sim)
+  
+opti_lambda_ridge <- numeric(N_sim)
+
+
+fold_k5 <- sample(rep(1:5, length.out= nrow(gusto.dat)))  #setting index per fold for 5-fold CV
+```
+
+Data generation
+```{r}
+y_sim_all <- matrix(NA, nrow = nrow(gusto.dat), ncol = N_sim) #empty matrix to save all the simulated variables
+
+for (alpha_i in 1:N_sim) { 
+
+  #simulated response variable y_sim:
+  y_sim = mu_i + rnorm(n= nrow(gusto.dat), mean = 0, sd=sigma ) 
+  
+  newdata <- gusto.dat
+  
+  y_sim_all[, alpha_i] <- y_sim}
+
+
+```
+
+for loop linear regression
+```{r}
+for (alpha_ols in 1:N_sim) {
+  
+ 
+  newdata <- gusto.dat
+  newdata$y_sim <- y_sim_all[, alpha_ols]
+  
+  # fit linear regression
+  lm_sim_OLS <- lm(
+    y_sim ~ AGE + V_1 + V_2 + PUL,
+    data = newdata
+  )
+  
+  # fitted values per simulation
+  pred_sim_OLS <- lm_sim_OLS$fitted.values
+  
+  #saving fitted values
+  pred_sim_ols[, alpha_ols] <- pred_sim_OLS
+}
+```
+
+for loop ridge regression
+```{r}
+for (alpha_ridge in 1:N_sim) {
+  newdata <- gusto.dat
+
+  newdata$y_sim <- y_sim_all[, alpha_ridge]
+  
+
+  
+  x = as.matrix(newdata[, c('V_1', 'V_2', 'AGE', 'PUL')]) #predictor matrix
+  
+  cv_ridge <- cv.glmnet(x= x,y= newdata$y_sim, alpha=0, lambda = c(1, 0.5,0.1,0.05,0.02,0.01, 0),foldid = fold_k5) #cv for lambda
+  
+  lambda_i <- cv_ridge$lambda.min
+  
+  opti_lambda_ridge[alpha_ridge] <-lambda_i
+  
+  lm_sim_RIDGE <- glmnet(x=x , y= newdata$y_sim , alpha = 0, lambda = lambda_i) #fitted model on newdata, chosen lambda
+  
+  pred_ridge <- predict(lm_sim_RIDGE, newx = x) #predict per each simulation
+  
+  pred_sim_ridge[,alpha_ridge] <- as.vector(pred_ridge)
+  
+}
+dim(pred_sim_ridge)
+```
+
+
+for loop local shrinkage
+
+To load the CSV file that already contains the local shrinkage predictions (previously calculated and saved in the file 'Simulation_Model_4_pred.csv'), read this file on the next chunk and skip the following code until the RESULTS section:
+```{r}
+data <- read.csv(
+  "Simulation_Model_4_pred.csv",
+  header = FALSE
+)
+
+data_local <- t(data)
+dim(data_local)
+
+pred_fileLocal <- as.data.frame(data_local)
+```
+Otherwise you can create the file from scratch and run the code below
+
+creation of a file csv to save the predictions:
+
+from column 1 to 20 
+```{r}
+for (alpha_local in 1:20) {
+  newdata <- gusto.dat
+  newdata$y_sim <- y_sim_all[, alpha_local]
+  
+  grid_neff <- c(0,50,120,150)
+ 
+  mse_grid <- sapply(grid_neff, function(n) Cross_val_local_shrik(neff = n, newdata = newdata, fold_k=fold_k5))
+  
+  outp <- data.frame(neff =grid_neff,MSE = mse_grid)
+  
+  optimal_neff <- outp[which.min(outp$MSE), "neff" ]  
+
+  opti_neff_sim[alpha_local] <- optimal_neff
+  
+  
+  shrink_algo <-local_shrik(neff = optimal_neff , newdata = newdata)
+  
+  
+  pred_sim_localS[,alpha_local] <- shrink_algo
+
+
+  ############################
+  row <- t(shrink_algo)    
+  rownames(row) <- alpha_local  
+  write.table(               #file creation
+    row,
+    file = 'test_model_4.csv',
+    sep = ",",
+    row.names = FALSE,
+    col.names = FALSE,
+    append = (alpha_local != 1)
+  )
+  #############################
+}
+```
+
+file check
+```{r}
+data <- read.csv(
+  "test_model_4.csv",
+  header = FALSE
+)
+
+data <- t(data) 
+```
+
+```{r}
+dim(data)
+```
+
+from column 20 to 60 
+```{r}
+for (alpha_local in 20:60) {
+  newdata <- gusto.dat
+  newdata$y_sim <- y_sim_all[, alpha_local]
+  
+  grid_neff <- c(0,50,120,150)
+ 
+  mse_grid <- sapply(grid_neff, function(n) Cross_val_local_shrik(neff = n, newdata = newdata, fold_k=fold_k5))
+  
+  outp <- data.frame(neff =grid_neff,MSE = mse_grid)
+  
+  optimal_neff <- outp[which.min(outp$MSE), "neff" ]  
+
+  opti_neff_sim[alpha_local] <- optimal_neff
+  
+  
+  shrink_algo <-local_shrik(neff = optimal_neff , newdata = newdata)
+  
+  
+  pred_sim_localS[,alpha_local] <- shrink_algo
+
+
+  ############################
+  row <- t(shrink_algo)    
+  rownames(row) <- alpha_local  
+  
+  write.table(
+    row,
+    file = 'test_model_4.csv',
+    sep = ",",
+    row.names = FALSE,
+    col.names = FALSE,
+    append = (alpha_local != 1)
+  )
+  #############################
+}
+```
+
+file check
+```{r}
+data <- read.csv(
+  "test_model_4.csv",
+  header = FALSE
+)
+
+data <- t(data)
+dim(data)
+```
+
+from column 60 to 79 
+```{r}
+for (alpha_local in 60:79) {
+  newdata <- gusto.dat
+  newdata$y_sim <- y_sim_all[, alpha_local]
+  
+  grid_neff <- c(0,50,120,150)
+ 
+  mse_grid <- sapply(grid_neff, function(n) Cross_val_local_shrik(neff = n, newdata = newdata, fold_k=fold_k5))
+  
+  outp <- data.frame(neff =grid_neff,MSE = mse_grid)
+  
+  optimal_neff <- outp[which.min(outp$MSE), "neff" ]  
+
+  opti_neff_sim[alpha_local] <- optimal_neff
+  
+  
+  shrink_algo <-local_shrik(neff = optimal_neff , newdata = newdata)
+  
+  
+  pred_sim_localS[,alpha_local] <- shrink_algo
+
+
+  ############################
+  row <- t(shrink_algo)   
+  rownames(row) <- alpha_local  
+  
+  write.table(
+    row,
+    file = 'test_model_4.csv',
+    sep = ",",
+    row.names = FALSE,
+    col.names = FALSE,
+    append = (alpha_local != 1)
+  )
+  #############################
+}
+```
+
+file check
+```{r}
+data <- read.csv(
+  "test_model_4.csv",
+  header = FALSE
+)
+
+data <- t(data)
+dim(data)
+```
+
+from column 80 to 89 
+```{r}
+for (alpha_local in 80:89) {
+  newdata <- gusto.dat
+  newdata$y_sim <- y_sim_all[, alpha_local]
+  
+  grid_neff <- c(0,50,120,150)
+ 
+  mse_grid <- sapply(grid_neff, function(n) Cross_val_local_shrik(neff = n, newdata = newdata, fold_k=fold_k5))
+  
+  outp <- data.frame(neff =grid_neff,MSE = mse_grid)
+  
+  optimal_neff <- outp[which.min(outp$MSE), "neff" ]  
+
+  opti_neff_sim[alpha_local] <- optimal_neff
+  
+  
+  shrink_algo <-local_shrik(neff = optimal_neff , newdata = newdata)
+  
+  
+  pred_sim_localS[,alpha_local] <- shrink_algo
+
+
+  ############################
+  row <- t(shrink_algo)   
+  rownames(row) <- alpha_local   
+  
+  write.table(
+    row,
+    file = 'test_model_4.csv',
+    sep = ",",
+    row.names = FALSE,
+    col.names = FALSE,
+    append = (alpha_local != 1)
+  )
+  #############################
+}
+```
+
+
+file check
+```{r}
+data <- read.csv(
+  "test_model_4.csv",
+  header = FALSE
+)
+
+data <- t(data)
+dim(data)
+```
+
+from column 90 to 98
+```{r}
+for (alpha_local in 90:98) {
+  newdata <- gusto.dat
+  newdata$y_sim <- y_sim_all[, alpha_local]
+  
+  grid_neff <- c(0,50,120,150)
+ 
+  mse_grid <- sapply(grid_neff, function(n) Cross_val_local_shrik(neff = n, newdata = newdata, fold_k=fold_k5))
+  
+  outp <- data.frame(neff =grid_neff,MSE = mse_grid)
+  
+  optimal_neff <- outp[which.min(outp$MSE), "neff" ]  
+
+  opti_neff_sim[alpha_local] <- optimal_neff
+  
+  
+  shrink_algo <-local_shrik(neff = optimal_neff , newdata = newdata)
+  
+  
+  pred_sim_localS[,alpha_local] <- shrink_algo
+
+
+  ############################
+  row <- t(shrink_algo)   
+  rownames(row) <- alpha_local  
+  
+  write.table(
+    row,
+    file = 'test_model_4.csv',
+    sep = ",",
+    row.names = FALSE,
+    col.names = FALSE,
+    append = (alpha_local != 1)
+  )
+  #############################
+}
+```
+
+The creation and completion of the test_Model_4.csv file is now finished. You can read the newly created file in the code below.
+
+
+Read the completed csv file:
+
+```{r}
+data <- read.csv(
+  "test_model_4.csv",
+  header = FALSE
+)
+
+data_local <- t(data)
+dim(data_local)
+
+pred_fileLocal <- as.data.frame(data_local)
+```
+
+
+
+RESULTS
+
+
+MSE model 4
+```{r}
+#computing MSE per method as difference between predicted and true value
+MSE_OLS <- colMeans(
+  (pred_sim_ols- mu_i)^2
+)
+
+MSE_RIDGE <- colMeans(
+  (pred_sim_ridge- mu_i)^2
+)
+
+MSE_LOCAL <- colMeans(
+  (pred_fileLocal - mu_i)^2
+)
+
+
+mse_all <- cbind(OLS = MSE_OLS, Ridge =MSE_RIDGE, Local = MSE_LOCAL)
+
+
+mse_min <- apply(mse_all, 1, min) #find minimum MSE between methods (per simulation)
+
+best_method <- apply(mse_all, 1, which.min) 
+
+best_method <- colnames(mse_all)[best_method]
+
+
+results <- data.frame(
+  z = 1:100,
+  mse_min = mse_min,
+  best_method = best_method
+)
+
+counts <- table(results$best_method) #counting the times each method achieves the lowest MSE
+
+ratios <- counts/100
+ratios
+```
+
+bias and variance:
+```{r}
+pred_meanLocal= rowMeans(pred_fileLocal)
+ols_rowmean_sim <- rowMeans(pred_sim_ols)
+ridge_rowmean_sim <- rowMeans(pred_sim_ridge)
+
+
+bias_ridge =ridge_rowmean_sim- mu_i
+bias_ols=   ols_rowmean_sim- mu_i
+bias_local= pred_meanLocal- mu_i
+
+#computing prediction variance per subject (across simulations):
+var_ols <- apply(pred_sim_ols, 1, var) 
+var_ridge<- apply(pred_sim_ridge, 1, var)
+var_local <- apply(pred_fileLocal,1  ,var)
+
+```
+medians bias and variance:
+```{r}
+median(bias_local)
+median(bias_ols)
+median(bias_ridge)
+
+median(var_local)
+median(var_ols)
+median(var_ridge)
+```
+
+Visualization:
+
+average predictions per subjects: OLS and Local shrinkage
+```{r}
+plot(ols_rowmean_sim, pred_meanLocal,
+     xlab = "OLS row mean",
+     ylab = "Ridge row mean")
+abline(a = 0, b = 1, col = "red", lwd = 2)
+```
+
+
+Bias distributions visualization through boxplots: 
+```{r}
+df_bias_wide <- data.frame(OLS = bias_ols, Ridge= bias_ridge, Local_Shrinkage=bias_local)
+
+
+df_bias_long <- pivot_longer(
+  df_bias_wide,
+  cols = everything(),
+  names_to = "method",
+  values_to = "bias"
+)
+
+ggplot(df_bias_long, aes(x =method , y =bias , fill =method )) +
+  geom_boxplot() +
+  labs(x = "Method", y = "Bias distribution", fill = "Method", title = "Bias per subject - Model 4") +
+  theme_bw()
+
+```
+
+
+Prediction variance (per subject) distributions - comparison between methods
+
+```{r}
+#PREDICTION VARIANCE
+plot(var_ols, var_ridge)
+abline(a=0, b=1, col= "purple")
+
+plot(bias_ols,bias_local)
+abline(a=0, b=1, col= "purple")
+
+
+plot(var_ols, var_local)
+abline(a=0, b=1, col= "purple")
+
+```
+
+Variance distribution comparison between methods through boxplots
+```{r}
+df_var <- data.frame(
+  OLS = var_ols,
+  Ridge = var_ridge,
+  Local_Shrinkage = var_local
+)
+
+# Convert to long format
+df_var_long <- pivot_longer(
+  df_var,
+  cols = everything(),
+  names_to = "Method",
+  values_to = "Prediction_Variance"
+)
+
+
+ggplot(df_var_long, aes(x = Method, y = Prediction_Variance, fill = Method)) +
+  geom_boxplot() +
+  labs(
+    title = "Variance per subject - Model 4",
+    x = "Method",
+    y = "Variance distribution"
+  ) +
+  theme_bw()
+
+```
+
+Variance across subjects per simulation (average across subjects)
+```{r}
+#computing prediction variance per simulation (across subjects):
+var_ols_sim <- apply(pred_sim_ols,2,var)
+var_ridge_sim <-apply(pred_sim_ridge,2,var)
+var_local_sim <-apply(pred_fileLocal,2,var)
+
+plot(var_ols_sim,var_local_sim, main= "Variance between subjects per simulated dataset ")
+abline(a=0, b=1, col= "red")
+
+plot(var_ols_sim,var_ridge_sim, main= "Variance between subjects per simulated dataset ")
+abline(a=0, b=1, col= "red")
+```
+
+ 
