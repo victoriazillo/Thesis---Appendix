@@ -42,26 +42,26 @@ Cross_val_local_shrik <- function(neff) {
   #Training set shrinkage:
     
   #initialization:
-    mod_OLS_base <- lm(formula = form1, data = train)
-    X_ols <- model.matrix(~HEI+AGE+PUL+SYS, data= train)  
+    mod_OLS_base <- lm(formula = form1, data = train) #linear regression on train set
+    X_ols <- model.matrix(~HEI+AGE+PUL+SYS, data= train) 
     XTX <- t(X_ols)%*%X_ols
     
     relvar_OLS <- numeric(length = nrow(X_ols)) 
      for(j in 1:length(relvar_OLS)){
-      relvar_OLS[j] <- (t(X_ols[j,])%*%solve(XTX)%*%X_ols[j,])}
+      relvar_OLS[j] <- (t(X_ols[j,])%*%solve(XTX)%*%X_ols[j,])}  # computation of 1/effective sample size linear regression on train set
     
     Z_ols      <- X_ols[,-1] #predictors without intercept
     n          <- nrow(Z_ols) 
     Z_shrink   <- Z_ols    #copy of the covariates that will be shrunk
-    relvar_it  <- relvar_OLS #copy of hii
+    relvar_it  <- relvar_OLS #copy of hii = 1/ effective sample size
     z_bar      <- colMeans(Z_shrink)  #average per predictor
     zc         <- t(apply(X=Z_shrink, MARGIN = 1, FUN = function(x){x-z_bar})) #covariates are centered
     X_shrink   <- cbind(icpt=rep(1,n), Z_shrink) #design matrix + intercept 
     iter       <- 0 
     maxiter    <- 1000
-    dist       <- n*relvar_it - 1  #distance
+    dist       <- n*relvar_it - 1  #distance is a function of the effective sample size
     diststart  <- dist  # initial distance saved
-    max_dist <- n*1/neff-1  
+    max_dist <- n*1/neff-1  #maximum distance allowed i.e. minimum effective sample size threshold alloewd
     Cov <- ginv(t(X_shrink)%*%X_shrink)
     
     
@@ -100,24 +100,25 @@ Cross_val_local_shrik <- function(neff) {
 
   train_shrunk <- data.frame("WEI" = train$weight) 
   train_shrunk <- cbind(train_shrunk, Z_shrink)
-  mod_train_shrink <- lm(formula = form1, data = train_shrunk )
+  mod_train_shrink <- lm(formula = form1, data = train_shrunk ) #fit the model on the shrunk training covariates
   
 
   
   #test set shrinkage:
-  X_ols_test <- model.matrix(~HEI+AGE+PUL+SYS, data= test)
+  X_ols_test <- model.matrix(~HEI+AGE+PUL+SYS, data= test) 
   relvar_OLS_test <- numeric(length = nrow(X_ols_test))  
   
-  for(k in 1:length(relvar_OLS_test)){                #inverse of effective sample size test set
+  for(k in 1:length(relvar_OLS_test)){                #computing inverse of effective sample size on test set
     relvar_OLS_test[k] <- (t(X_ols_test[k,])%*%Cov%*%X_ols_test[k,])}
   
   n.test <- nrow(X_ols_test)
-  test_distance <- n*relvar_OLS_test-1 
+  
+  test_distance <- n*relvar_OLS_test-1 #test set distances
   
   
-  distshrink_test <- pmin(test_distance, max_dist)  #shrinkage of the test set
+  distshrink_test <- pmin(test_distance, max_dist)  #selecting only distances < maxdist or distance will be = maxdist
   
-  a_test <-  sqrt(distshrink_test / test_distance)  
+  a_test <-  sqrt(distshrink_test / test_distance)  #computing shrinkage factor for subjects in the test set
 
 
   Z_ols_test   <- X_ols_test[,-1] # new patients (test set) without intercept
@@ -159,26 +160,28 @@ best_grid #Optimal threshold for model 1 is "neff"=50
 
 
 Global shrinkage: ridge regression CV
+
 ```{r}
 
 x <- model.matrix( ~ HEI + AGE + PUL + SYS, gusto.dat)[,-1] 
 y <- gusto.dat$WEI
 cv_ridge <- cv.glmnet( x, y, alpha = 0, lambda =  c(1, 0.5,0.1,0.05,0.02,0.01, 0), keep = T,foldid = fold_k5  )  #cv using the same folds as local shrinkage
 
-cv_ridge$lambda.min
+cv_ridge$lambda.min # 0.1
+
+# computing un-weighted mean of folds' MSE:
 
 j <- which(cv_ridge$lambda == 0.1)
 
-#predictions out of fold
-pred <- cv_ridge$fit.preval[, j]
+pred <- cv_ridge$fit.preval[, j] #predictions 
 
 # MSE per fold
-mse_fold <- sapply(1:5, function(i) {
+mse_fold <- sapply(1:5, function(i) { #MSE per fold
   idx <- fold_k5 == i
   mean((y[idx] - pred[idx])^2)
 })
 
-mean(mse_fold)
+mean(mse_fold) #mean MSE
 ```
 
 
