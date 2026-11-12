@@ -144,21 +144,21 @@ mean(neff_all$n_eff_OLS_A > 1200) * 100
 mean(neff_all$n_eff_OLS_H > 1200) * 100
 ```
 
-900 e 1200
+900 and 1200
 ```{r}
 mean(neff_all$n_eff_OLS > 900 & neff_all$n_eff_OLS <= 1200) * 100
 mean(neff_all$n_eff_OLS_A > 900 & neff_all$n_eff_OLS_A <= 1200) * 100
 mean(neff_all$n_eff_OLS_H > 900 & neff_all$n_eff_OLS_H<= 1200) * 100
 ```
 
-600 e 900
+600 and 900
 ```{r}
 mean(neff_all$n_eff_OLS > 600 & neff_all$n_eff_OLS <= 900) * 100
 mean(neff_all$n_eff_OLS_A > 600 & neff_all$n_eff_OLS_A <= 900) * 100
 mean(neff_all$n_eff_OLS_H > 600 & neff_all$n_eff_OLS_H <= 900) * 100
 ```
 
-300 e 600
+300 and 600
 
 ```{r}
 mean(neff_all$n_eff_OLS > 300 & neff_all$n_eff_OLS <= 600) * 100
@@ -292,18 +292,18 @@ mean(neff_all$n_eff_OLS_f7 > 1200) * 100
 mean(neff_all$n_eff_OLS_f15 > 1200) * 100
 ```
 
-tra 900 e 1200
+between 900 and 1200
 ```{r}
 mean(neff_all$n_eff_OLS_f7 > 900 & neff_all$n_eff_OLS_f7 <= 1200) * 100
 mean(neff_all$n_eff_OLS_f15 > 900 & neff_all$n_eff_OLS_f15 <= 1200) * 100
 ```
-tra 600 e 900
+between 600 and 900
 ```{r}
 mean(neff_all$n_eff_OLS_f7 > 600 & neff_all$n_eff_OLS_f7 <= 900) * 100
 mean(neff_all$n_eff_OLS_f15 > 600 & neff_all$n_eff_OLS_f15 <= 900) * 100
 ```
 
-tra 300 e 600
+between 300 and 600
 ```{r}
 mean(neff_all$n_eff_OLS_f7 > 300 & neff_all$n_eff_OLS_f7 <= 600) * 100
 mean(neff_all$n_eff_OLS_f15 > 300 & neff_all$n_eff_OLS_f15 <= 600) * 100
@@ -317,7 +317,7 @@ mean(neff_all$n_eff_OLS_f15 <=300) * 100
 
 Visualization:
 
-effective sample size density per model
+effective sample size density per model - create df for visualization
 ```{r}
 
 neff_long <- neff_all %>%
@@ -331,7 +331,7 @@ neff_long <- neff_all %>%
                values_to = "ESS")  %>%
   mutate(modello = factor(modello,
                           levels = c("n_eff_OLS_A",
-                                     "n_eff_OLS_H",
+                                     "n_eff_OLS",
                                      "n_eff_OLS_bin",
                                      "n_eff_OLS_f7",
                                      "n_eff_OLS_f15")))
