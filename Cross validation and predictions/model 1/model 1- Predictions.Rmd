@@ -76,7 +76,7 @@ local shrinkage algorithm:
 Z_ols      <- X_ols[,-1] #predictors without intercept
 n          <- nrow(Z_ols) 
 Z_shrink   <- Z_ols    #copy of the covariates that will be shrank
-relvar_it  <- relvar_OLS #copy of hii
+relvar_it  <- relvar_OLS #copy of hii (1/effective sample size)
 z_bar      <- colMeans(Z_shrink)  #average per predictor value
 zc         <- t(apply(X=Z_shrink, MARGIN = 1, FUN = function(x){x-z_bar})) #covariates are centered
 X_shrink   <- cbind(icpt=rep(1,n), Z_shrink) #design matrix + intercept 
@@ -92,7 +92,7 @@ CV gives 50 as the best threshold for this model
 #THRESHOLD FOR SHRINKAGE.
 # parameter:  neff_min          'effective sample size'
 
-neff_min <- 50
+neff_min <- 50 #optimal effective sample size threshold estimated for model 1
 
 max_dist <- n*1/neff_min -1  #threshold for shrinkage
 ```
@@ -103,29 +103,30 @@ while(max(dist) > max_dist & iter < maxiter){ #while loop until all distances ar
   
   ## compute the shrinked distance
   distshrink  <- dist
-  distshrink[which(dist>max_dist)] <- max_dist 
+  distshrink[which(dist>max_dist)] <- max_dist # if distance > maxdist, then distance is set equal to max_dist
   
   # compute shrinkage factor
   a           <- sqrt(distshrink/dist)
   
   
   azc         <- a*zc #  #shrink of the centered covariates
-  Z_shrink    <- t(apply(X=azc, MARGIN = 1, FUN = function(x){x + z_bar})) 
+  
+  Z_shrink    <- t(apply(X=azc, MARGIN = 1, FUN = function(x){x + z_bar})) #add mean back
   
   iter <- iter + 1  
-  ## step 1
+  
   X_shrink   <- cbind(icpt=rep(1,n), Z_shrink)  #adding the intercept
   
-  z_bar      <- colMeans(Z_shrink) 
+  z_bar      <- colMeans(Z_shrink) #re-computing the mean
   
-  zc         <- t(apply(X=Z_shrink, MARGIN = 1, FUN = function(x){x-z_bar})) 
+  zc         <- t(apply(X=Z_shrink, MARGIN = 1, FUN = function(x){x-z_bar}))  #centering
   
   
-  Cov        <- ginv(t(X_shrink)%*%X_shrink) #XTX
+  Cov        <- ginv(t(X_shrink)%*%X_shrink) #computing the inverse of XTX with shrunk X
   
-  relvar_it  <- diag(X_shrink %*% Cov %*% t(X_shrink))  #the inverse of XTX 
+  relvar_it  <- diag(X_shrink %*% Cov %*% t(X_shrink))  #computing 1/effective sample size
   
-  n_eff      <- 1/relvar_it 
+  n_eff      <- 1/relvar_it #effective sample size
   
   dist       <- n*relvar_it - 1  
 }
@@ -134,7 +135,7 @@ while(max(dist) > max_dist & iter < maxiter){ #while loop until all distances ar
 Effective sample size computed on the test set
 ```{r}
 #test set distances 
-relvar_OLS_test <- numeric(length = nrow(X_ols_test))  
+relvar_OLS_test <- numeric(length = nrow(X_ols_test))  #computing 1/effective sample size in the test set
 for(i in 1:length(relvar_OLS_test)){
   relvar_OLS_test[i] <- (t(X_ols_test[i,])%*%Cov%*%X_ols_test[i,])
 }
@@ -146,9 +147,9 @@ sum((1/relvar_OLS_test)<50) #only 3 test set subjects have an effective sample s
 ```
 Local shrinkage on the test set
 ```{r}
-distshrink_test <- pmin(test_distance, max_dist) #distance shrinkage
+distshrink_test <- pmin(test_distance, max_dist) #if distance > max_dist, then distance is set equal to max_dist
 
-a_test <-  sqrt(distshrink_test / test_distance) #tesy shrinkage factor
+a_test <-  sqrt(distshrink_test / test_distance) #test set shrinkage factor
 
 Z_ols_test   <- X_ols_test[,-1] 
 
