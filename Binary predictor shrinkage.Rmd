@@ -67,7 +67,7 @@ maxiter    <- 1000
 
 dist       <- n*relvar_it - 1
 diststart  <- dist
-max_dist   <- (n/200) -1
+max_dist   <- (n/200) -1  #effective sample size threshold chosen for exploration : 200
 
 while(max(dist) > max_dist & iter < maxiter){
   
