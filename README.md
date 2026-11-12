@@ -1,5 +1,5 @@
 # Thesis---Appendix
-This is the Appendix for the thesis "Local shrinkage of uncertain predictions based on Effective sample size"
+This is the Appendix for the thesis "Local shrinkage of uncertain predictions based on effective sample size"
 ## Purpose of this repository
 This repository contains the code files used to perform the analyses presented in this thesis.
 
