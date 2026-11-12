@@ -14,7 +14,7 @@ gusto.dat <- gusto
 
 
 gusto.dat <- gusto[which(gusto$grpl %in% c(1,2,4) & gusto$grps %in% c(5,9,10,11)),] 
-n_pat <- nrow(gusto.dat)  #conta quanti pazienti hai dopo il filtro: 1214
+n_pat <- nrow(gusto.dat)  # 1214
 gusto.dat$pat.id <- 1:n_pat
 
 ```
@@ -67,7 +67,7 @@ maxiter    <- 1000
 
 dist       <- n*relvar_it - 1
 diststart  <- dist
-max_dist   <- (n/200) -1  #effective sample size threshold chosen for exploration : 200
+max_dist   <- (n/200) -1  #effective sample size threshold set : 200
 
 while(max(dist) > max_dist & iter < maxiter){
   
