@@ -1,0 +1,254 @@
+Model 2 cross validation and computation of predictions - comparison between methods
+```{r}
+library(Hmisc)
+library(ggplot2)
+library(MASS)
+library(dplyr)
+library(glmnet)
+getHdata(gusto)
+gusto.dat <- gusto
+set.seed(4176340)
+gusto.dat <- gusto[which(gusto$grpl %in% c(1,2,4) & gusto$grps %in% c(5,9,10,11)),]
+```
+
+Simulation of the asymmetric variable V1
+```{r}
+gusto.dat$V_1 <- rlnorm(n=nrow(gusto.dat), meanlog = log(gusto.dat$weight), sdlog = 0.5)
+```
+
+model 2 variables
+```{r}
+gusto.dat$PUL <- gusto.dat$pulse
+gusto.dat$V_1 <- gusto.dat$V_1
+gusto.dat$AGE <- gusto.dat$age
+gusto.dat$WEI <- gusto.dat$weight
+gusto.dat$SYS <- gusto.dat$sysbp
+gusto.dat$HEI <- gusto.dat$height
+```
+
+
+
+Cross validation function - Model 2
+```{r}
+#algorithm:
+fold_k5 <- sample(rep(1:5, length.out= nrow(gusto.dat))) #index per fold
+
+#function(threshold)
+Cross_val_local_shrik <- function(neff) {
+  form1 <- WEI ~  V_1 + AGE + PUL + SYS + HEI
+  mse <- rep(0,5)
+  #mse[i]
+  for(i in 1:5){
+    train <- gusto.dat[fold_k5 != i, ] 
+    test  <- gusto.dat[fold_k5 == i, ]
+  
+  #per each train
+    mod_OLS_base <- lm(formula = form1, data = train)
+    X_ols <- model.matrix(~ V_1 + AGE + PUL + SYS + HEI, data= train)  
+    XTX <- t(X_ols)%*%X_ols
+    
+    relvar_OLS <- numeric(length = nrow(X_ols)) 
+     for(j in 1:length(relvar_OLS)){
+      relvar_OLS[j] <- (t(X_ols[j,])%*%solve(XTX)%*%X_ols[j,])}
+    
+    Z_ols      <- X_ols[,-1] #predictors without intercept
+    n          <- nrow(Z_ols) 
+    Z_shrink   <- Z_ols    #copy of the covariates that will be shrunk
+    relvar_it  <- relvar_OLS #copy of hii(1/effective sample size)
+    z_bar      <- colMeans(Z_shrink)  #average per predictor
+    zc         <- t(apply(X=Z_shrink, MARGIN = 1, FUN = function(x){x-z_bar})) #covariates are centered
+    X_shrink   <- cbind(icpt=rep(1,n), Z_shrink) #design matrix + intercept 
+    iter       <- 0 
+    maxiter    <- 1000
+    dist       <- n*relvar_it - 1  #distance
+    diststart  <- dist  # initial distance saved
+    max_dist <- n*1/neff-1  
+  
+
+    Cov <- ginv(t(X_shrink)%*%X_shrink) 
+    while(max(dist) > max_dist & iter < maxiter){ #while loop until all distances are below the threshold
+  
+  ## compute the shrunk distances
+      distshrink  <- dist
+      distshrink[which(dist>max_dist)] <- max_dist #if dist > max_dist , dist is shrank
+  
+  # compute shrinkage factor
+      a           <- sqrt(distshrink/dist)
+  
+  
+      azc         <- a*zc #shrinkage of the centered covariates
+      Z_shrink    <- t(apply(X=azc, MARGIN = 1, FUN = function(x){x + z_bar})) #adding the mean 
+  
+      iter <- iter + 1  
+
+      X_shrink   <- cbind(icpt=rep(1,n), Z_shrink)  #adding the intercept to the shrunk predictors
+   
+      z_bar      <- colMeans(Z_shrink) # calculating the mean
+  
+      zc         <- t(apply(X=Z_shrink, MARGIN = 1, FUN = function(x){x-z_bar})) 
+  
+      Cov        <- ginv(t(X_shrink)%*%X_shrink) #recompute the shrunk XTX
+  
+      relvar_it  <- diag(X_shrink %*% Cov %*% t(X_shrink))  #recompute  the inverse of XTX with shrunk X
+  
+      n_eff      <- 1/relvar_it #recompute the effective sample sizes
+  
+      dist       <- n*relvar_it - 1  #recompute the distance
+      }
+
+
+  train_shrunk <- data.frame("WEI" = train$weight) 
+  train_shrunk <- cbind(train_shrunk, Z_shrink)
+  mod_train_shrink <- lm(formula = form1, data = train_shrunk )
+  
+  #per each test:
+  X_ols_test <- model.matrix(~ V_1 + AGE + PUL + SYS + HEI, data= test)
+  relvar_OLS_test <- numeric(length = nrow(X_ols_test))  
+  for(k in 1:length(relvar_OLS_test)){
+    relvar_OLS_test[k] <- (t(X_ols_test[k,])%*%Cov%*%X_ols_test[k,])}
+  
+  n.test <- nrow(X_ols_test)
+  test_distance <- n*relvar_OLS_test-1 #test set distances
+  
+  #shrinkage test set
+  
+  distshrink_test <- pmin(test_distance, max_dist)
+  a_test <-  sqrt(distshrink_test / test_distance)
+  
+  Z_ols_test   <- X_ols_test[,-1] 
+  
+  Z_shrink_test <- Z_ols_test 
+  relvar_it_test <- relvar_OLS_test
+
+
+  zc_test        <- t(apply(X=Z_shrink_test, MARGIN = 1, FUN = function(x){x-z_bar})) #centering the covariates of the test set
+  azc_test <-zc_test*a_test #shrinking the test set
+  
+  Z_shrink_test    <- t(apply(X=azc_test, MARGIN = 1, FUN = function(x){x + z_bar})) #adding the mean back
+  
+  X_shrink_test <- cbind(icpt=rep(1,n.test), Z_shrink_test) 
+  
+  
+
+  #compute MSE
+  test_shrunk <- data.frame("WEI" = test$weight) 
+  test_shrunk <- cbind(test_shrunk, Z_shrink_test)
+
+  dim(Z_shrink)
+  pred <- predict(mod_train_shrink, newdata = test_shrunk) #predictions
+
+  
+  mse[i] <-  mean((test$weight- pred)^2)} #MSE
+ 
+  return(mean(mse)) #average mse across folds
+}
+
+```
+
+Grid search for optimal threshold with CV function
+```{r}
+grid_neff <- c(0,10,50,100) #candidate thresholds
+mse_values <- sapply(grid_neff, function(x) { Cross_val_local_shrik(neff = x) }) #CV grid search
+results <- data.frame( neff = grid_neff, MSE = mse_values ) 
+best <- results[which.min(results$MSE), ] 
+results
+best #Optimal threshold is 0, which coincides with Ordinary Least Squares method
+```
+Ridge regression CV
+```{r}
+x.2 <- model.matrix( ~ V_1 +HEI + AGE + PUL + SYS, gusto.dat)[,-1] 
+y.2 <- gusto.dat$WEI
+cv_ridge.2 <- cv.glmnet( x.2, y.2, alpha = 0 , keep = T, lambda = c(1, 0.9,0.5,0.1,0.05,0.02,0.01, 0) ,foldid = fold_k5 )
+
+
+cv_ridge.2$lambda.min #0.1
+
+j <- which(cv_ridge.2$lambda == 0.1)
+
+#predictions out of fold
+pred <- cv_ridge.2$fit.preval[, j]
+
+# MSE per fold
+mse_fold <- sapply(1:5, function(i) {
+  idx <- fold_k5 == i
+  mean((y.2[idx] - pred[idx])^2)
+})
+
+mean(mse_fold)
+
+```
+
+Predictions - model 2
+
+Train and test set split
+```{r}
+size = 0.7
+n.1 <- nrow(gusto.dat)
+train_index <- sample(1:n.1, size = size * n.1)
+train_set <- gusto.dat[train_index, ]
+test_set  <- gusto.dat[-train_index, ]
+n_pat <- nrow(train_set)  
+train_set$pat.id <- 1:n_pat
+train_set$HEI <- train_set$height
+train_set$WEI <- train_set$weight
+train_set$AGE <- train_set$age
+train_set$SYS <- train_set$sysbp
+train_set$PUL <- train_set$pulse
+train_set$V_1 <- train_set$V_1
+
+test_set$HEI <- test_set$height
+test_set$WEI <- test_set$weight
+test_set$AGE <- test_set$age
+test_set$SYS <- test_set$sysbp
+test_set$PUL <- test_set$pulse
+test_set$V_1 <- test_set$V_1
+```
+
+Linear model (0LS)
+```{r}
+form1 <- WEI ~ HEI + AGE + PUL + SYS + V_1
+mod_OLS_base <- lm(formula = form1, data = train_set) # model fit on train set
+pred_ols_mod2 <- predict(mod_OLS_base, newdata = test_set) #predictions on test set
+
+
+```
+
+Ridge predictions
+```{r}
+x_train <- model.matrix( ~ HEI + AGE + PUL + SYS + V_1, train_set)[,-1] 
+y_train <- train_set$WEI
+x_test <- model.matrix( ~ HEI + AGE + PUL + SYS + V_1, test_set)[,-1] 
+
+ridge_fit <- glmnet( # model fit on train set
+  x_train,
+  y_train,
+  alpha = 0, #ridge regression
+  lambda = 0.1
+)
+
+pred_ridge <- predict( #prediction on test set
+  ridge_fit,
+  newx = x_test,
+  s = 0.1
+)
+```
+
+Visualization
+Predictions: OLS vs ridge
+```{r}
+ggplot(
+  data = data.frame(pred_ols_mod2 = pred_ols_mod2,
+                    pred_ridge = pred_ridge),
+  aes(x = pred_ols_mod2, y = pred_ridge)
+) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, color = "red") +
+  labs(
+    x = "OLS predictions",
+    y = "Ridge regression predictions"
+  ) +
+  theme_bw()
+
+
+```
+

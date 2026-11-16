@@ -1,0 +1,240 @@
+Model 3: comparison between methods
+```{r}
+library(Hmisc)
+library(ggplot2)
+library(MASS)
+library(dplyr)
+library(glmnet)
+getHdata(gusto)
+gusto.dat <- gusto
+
+set.seed(4176340)
+
+gusto.dat <- gusto[which(gusto$grpl %in% c(1,2,4) & gusto$grps %in% c(5,9,10,11)),]
+```
+
+Simulations of two asymmetric predictors
+```{r}
+gusto.dat$V_1 <- rlnorm(n = nrow(gusto.dat),
+  meanlog = log(gusto.dat$weight),
+  sdlog = 0.5)
+cor(gusto.dat$V_1, gusto.dat$weight)
+
+gusto.dat$V_2 <- rexp(n=nrow(gusto.dat), rate = 1/gusto.dat$weight)
+cor(gusto.dat$V_2, gusto.dat$weight)
+
+```
+
+
+Model 3 variables
+```{r}
+gusto.dat$V_1 <- gusto.dat$V_1
+gusto.dat$V_2 <- gusto.dat$V_2
+gusto.dat$PUL <- gusto.dat$pulse
+gusto.dat$AGE <- gusto.dat$age
+gusto.dat$WEI <- gusto.dat$weight
+
+```
+
+Cross validation 
+```{r}
+
+#algorithm:
+fold_k5 <- sample(rep(1:5, length.out= nrow(gusto.dat))) #index per fold
+
+Cross_val_local_shrik_new <- function(neff) { #function of threshold
+  form1 <- WEI ~ V_1 + V_2 + AGE + PUL
+  mse <- rep(0,5)
+  #mse[i]
+  for(i in 1:5){
+    train <- gusto.dat[fold_k5 != i, ] 
+    test  <- gusto.dat[fold_k5 == i, ]
+  
+  #initialization
+    mod_OLS_base <- lm(formula = form1, data = train)
+    X_ols <- model.matrix(~ V_1 + V_2 + AGE + PUL, data= train)  
+    XTX <- t(X_ols)%*%X_ols
+    
+    relvar_OLS <- numeric(length = nrow(X_ols)) 
+     for(j in 1:length(relvar_OLS)){
+      relvar_OLS[j] <- (t(X_ols[j,])%*%solve(XTX)%*%X_ols[j,])}
+    
+    Z_ols      <- X_ols[,-1] #predictors without intercept
+    n          <- nrow(Z_ols) 
+    Z_shrink   <- Z_ols    #copy of the covariates
+    relvar_it  <- relvar_OLS #copy of hii (1/effective sample size)
+    z_bar      <- colMeans(Z_shrink)  #average per predictor
+    zc         <- t(apply(X=Z_shrink, MARGIN = 1, FUN = function(x){x-z_bar})) #covariates are centered
+    X_shrink   <- cbind(icpt=rep(1,n), Z_shrink) #design matrix + intercept
+    iter       <- 0 
+    maxiter    <- 1000
+    dist       <- n*relvar_it - 1  #distance
+    diststart  <- dist  # initial distance saved
+    max_dist <- n*1/neff-1  #max distance allowed
+  
+  #per each training:
+    Cov <- ginv(t(X_shrink)%*%X_shrink)
+    while(max(dist) > max_dist & iter < maxiter){ #while loop until all distances are below the threshold
+  
+      distshrink  <- dist
+      distshrink[which(dist>max_dist)] <- max_dist
+
+      a           <- sqrt(distshrink/dist)  # compute shrinkage factor
+  
+      azc         <- a*zc   #shrinkage of the centered covariates
+      
+      Z_shrink    <- t(apply(X=azc, MARGIN = 1, FUN = function(x){x + z_bar})) 
+  
+      iter <- iter + 1  
+
+      X_shrink   <- cbind(icpt=rep(1,n), Z_shrink) 
+   
+      z_bar      <- colMeans(Z_shrink)
+  
+      zc         <- t(apply(X=Z_shrink, MARGIN = 1, FUN = function(x){x-z_bar})) 
+  
+      Cov        <- ginv(t(X_shrink)%*%X_shrink) 
+  
+      relvar_it  <- diag(X_shrink %*% Cov %*% t(X_shrink)) 
+  
+      n_eff      <- 1/relvar_it 
+  
+      dist       <- n*relvar_it - 1  
+      }
+
+
+  train_shrunk <- data.frame("WEI" = train$weight) 
+  train_shrunk <- cbind(train_shrunk, Z_shrink)
+  mod_train_shrink <- lm(formula = form1, data = train_shrunk )
+  
+  #test set shrinkage
+  
+  X_ols_test <- model.matrix(~ V_1 + V_2 + AGE + PUL, data= test)
+  relvar_OLS_test <- numeric(length = nrow(X_ols_test))  
+  for(k in 1:length(relvar_OLS_test)){
+    relvar_OLS_test[k] <- (t(X_ols_test[k,])%*%Cov%*%X_ols_test[k,])}
+  
+  n.test <- nrow(X_ols_test)
+  test_distance <- n*relvar_OLS_test-1
+
+  distshrink_test <- pmin(test_distance, max_dist)
+  
+  a_test <-  sqrt(distshrink_test / test_distance)
+ 
+  Z_ols_test   <- X_ols_test[,-1]
+  
+  Z_shrink_test <- Z_ols_test 
+  relvar_it_test <- relvar_OLS_test
+
+  zc_test        <- t(apply(X=Z_shrink_test, MARGIN = 1, FUN = function(x){x-z_bar})) 
+  azc_test <-zc_test*a_test
+  Z_shrink_test    <- t(apply(X=azc_test, MARGIN = 1, FUN = function(x){x + z_bar})) 
+  X_shrink_test <- cbind(icpt=rep(1,n.test), Z_shrink_test) 
+  
+  
+
+  #compute MSE
+  test_shrunk <- data.frame("WEI" = test$weight) 
+  test_shrunk <- cbind(test_shrunk, Z_shrink_test)
+
+  pred <- predict(mod_train_shrink, newdata = test_shrunk)
+  
+  mse[i] <-  mean((test$weight- pred)^2)}
+  return(mean(mse)) 
+}
+
+
+```
+
+Cross validation - model 3
+```{r}
+grid_neff <- c(0,20,50)
+mse_values <- sapply(grid_neff, function(x) { Cross_val_local_shrik_new(neff = x) }) 
+results <- data.frame( neff = grid_neff, MSE = mse_values ) 
+best <- results[which.min(results$MSE), ] 
+results
+best #best threshold is 0
+```
+
+
+Ridge CV - model 3
+```{r}
+x.3 <- model.matrix( ~   V_1 + V_2 + AGE + PUL, gusto.dat)[,-1] 
+y.3 <- gusto.dat$WEI
+
+
+cv_ridge.3 <- cv.glmnet( x.3, y.3, alpha = 0, lambda = c(1, 0.5,0.1,0.05,0.02,0.01, 0),keep = T, foldid = fold_k5  )
+
+cv_ridge.3$lambda.min #0.1
+
+j <- which(cv_ridge.3$lambda == 0.1)
+
+#predictions out of fold
+pred <- cv_ridge.3$fit.preval[, j]
+
+# MSE per fold
+mse_fold <- sapply(1:5, function(i) {
+  idx <- fold_k5 == i
+  mean((y.3[idx] - pred[idx])^2)
+})
+
+mean(mse_fold)
+```
+
+Model 3 - predictions
+```{r}
+
+# build test and training sets.
+# parameter : size        'training size'
+size = 0.7
+
+n.1 <- nrow(gusto.dat)
+train_index <- sample(1:n.1, size = size * n.1)
+train_set <- gusto.dat[train_index, ]
+test_set  <- gusto.dat[-train_index, ]
+n_pat <- nrow(train_set)  
+train_set$pat.id <- 1:n_pat
+
+train_set$WEI <- train_set$weight
+train_set$AGE <- train_set$age
+train_set$PUL <- train_set$pulse
+
+
+test_set$WEI <- test_set$weight
+test_set$AGE <- test_set$age
+test_set$PUL <- test_set$pulse
+```
+OLS 
+```{r}
+form1 <- WEI ~  AGE + PUL +  V_1 + V_2
+mod_OLS_base <- lm(formula = form1, data = train_set)
+```
+
+Ridge
+```{r}
+x_train <- model.matrix( ~  AGE + PUL + V_1 + V_2, train_set)[,-1] 
+y_train <- train_set$WEI
+x_test <- model.matrix( ~ AGE + PUL + V_1 + V_2, test_set)[,-1] 
+
+ridge_fit <- glmnet(
+  x_train,
+  y_train,
+  alpha = 0, #ridge regression
+  lambda = 0.1
+)
+
+pred_ridge <- predict(
+  ridge_fit,
+  newx = x_test,
+  s = 0.1
+)
+pred_ols <- predict(mod_OLS_base, newdata = test_set)
+
+```
+
+Predictions: OLS vs Ridge
+```{r}
+plot(x=pred_ols, y= pred_ridge, xlab = "Ols predictions", ylab = "Ridge predictions", xlim= c(60,100), ylim = c(60,100))
+abline(a = 0, b = 1, col= "red")
+```
+
