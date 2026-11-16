@@ -11,11 +11,11 @@ I suggest to run the Rcode in the order the files are presented below. The local
 
 2. The fold 'Cross Validation and Predictions' contains the fold 'Model 1' with two R Markdown files:
 
-- Model 1 - Cross Validation.Rmd: contains the implementation of the local shrinkage algorithm, adapted to perform cross-validation for Model 1.
+- model 1 - Cross Validation.Rmd: contains the implementation of the local shrinkage algorithm, adapted to perform cross-validation for Model 1.
 
-- Model 1 - Predictions.Rmd: contains the code used to calculate the predictions for Model 1 using OLS , ridge regression and local shrinkage methods.
+- model 1 - Predictions.Rmd: contains the code used to calculate the predictions for Model 1 using OLS , ridge regression and local shrinkage methods.
 
-It also contains the fold 'Model 2, Model 3 and Model 4'  which includes the rmd files where CV and predictions are computed for the three models (2,3 and 4) using OLS, ridge and local shrinkage.
+It also contains the fold 'model 2, model 3 and model 4'  which includes the rmd files where CV and predictions are computed for the three models (2,3 and 4) using OLS, ridge and local shrinkage.
 
 
 3. The file 'Binary predictor shrinkage.Rmd' explores the shrinkage of asymmetric binary predictors using the local shrinkage algorithm.
