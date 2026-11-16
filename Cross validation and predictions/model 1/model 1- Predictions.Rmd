@@ -175,22 +175,6 @@ train_shrunk <- cbind(train_shrunk, Z_shrink) #dataframe with weight observed an
 
 mod_OLS_shrunk <- lm(formula = form1, data = train_shrunk) #linear regression with shrunk train covariates
 
-#building dataframe for visualization:
-shrinkplot <- rbind(data.frame(relvar = relvar_OLS, 
-                               pred = mod_OLS_base$fitted.values, 
-                               type = "OLS"), 
-                    data.frame(relvar = relvar_it, 
-                               pred = mod_OLS_shrunk$fitted.values, 
-                               type = "shrunk"))
-shrinkplot$pat.id <- c(1:n, 1:n)
-
-Z_compare      <- rbind(Z_ols, Z_shrink) 
-
-Z_compare     <- as.data.frame(Z_compare) 
-
-Z_compare$type <- shrinkplot$type 
-
-Z_compare$pat.id <- c(1:n, 1:n) 
 ```
 
 
