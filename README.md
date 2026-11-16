@@ -4,7 +4,7 @@ This is the Appendix of the thesis "Local shrinkage of uncertain predictions bas
 This repository contains the code files used to perform the analyses presented in this thesis.
 
 ## How to run the scripts
-I suggest to run the Rcode in the order the files are presented below. The local shrinkage algorithm steps are explained in detail in the file 'Model 1- Cross Validation.Rmd' and in the file 'Model 1- Predictions.Rmd'. 
+I suggest to run the Rcode in the order the files are presented below. The local shrinkage algorithm steps are commented in detail in the file 'Model 1- Cross Validation.Rmd' and in the file 'Model 1- Predictions.Rmd'. 
 ## R code files 
 
 1. The file 'neff exploration linear models.Rmd' contains the code used to explore the effective sample size distributions across different linear model specifications. 
